@@ -5,7 +5,7 @@
 Battery Life Parser & Efficiency + GSMArena Enrichment
 
 Features
-- Fetch SoCPK 续航 3.5 JS, robustly extract arr=[...]
+- Fetch SoCPK 续航 JS (3.5 legacy or main site via --site), robustly extract arr=[...]
 - Compute:
     * Avg Power (W) = capacityWh*60 / minutes
     * Minutes per Wh (min/Wh) = minutes / capacityWh
@@ -39,10 +39,17 @@ from urllib.parse import urljoin
 # -----------------------------
 # SoCPK data sources & defaults
 # -----------------------------
-DEFAULT_URLS = [
-    "https://www.socpk.com/batlife/3.5/50cl1st.js?22",
-    "https://www.socpk.com/batlife/3.5/",
-]
+DEFAULT_SITE_KEY = "3.5"
+SITE_URLS = {
+    "3.5": [
+        "https://www.socpk.com/batlife/3.5/50cl1st.js?22",
+        "https://www.socpk.com/batlife/3.5/",
+    ],
+    "main": [
+        "https://www.socpk.com/batlife/50cl1st.js?22",
+        "https://www.socpk.com/batlife/",
+    ],
+}
 DEFAULT_CSV = "results.csv"
 
 DEFAULT_SPEC_URLS: Dict[str, str] = {
@@ -579,6 +586,10 @@ def print_correlations(records: List[Dict]) -> None:
 # -----------------------------
 def main():
     ap = argparse.ArgumentParser(description="SoCPK Battery Efficiency + GSMArena enrichment")
+    ap.add_argument("--site", choices=sorted(SITE_URLS.keys()), default=DEFAULT_SITE_KEY,
+                    help=("Which SoCPK batlife site to target: "
+                          "'3.5' for https://www.socpk.com/batlife/3.5/ (default) or "
+                          "'main' for https://www.socpk.com/batlife/"))
     ap.add_argument("--url", action="append", help="Override SoCPK source URL(s)")
     ap.add_argument("--csv", help=f"Output CSV path (default: {DEFAULT_CSV})")
     ap.add_argument("--json", help="Optional JSON output path")
@@ -600,7 +611,8 @@ def main():
     args = ap.parse_args()
 
     # 1) Fetch SoCPK JS that defines arr=[...]
-    urls = args.url if args.url else DEFAULT_URLS
+    default_urls = SITE_URLS.get(args.site, SITE_URLS[DEFAULT_SITE_KEY])
+    urls = args.url if args.url else default_urls
     js_text = None
     for url in urls:
         try:
