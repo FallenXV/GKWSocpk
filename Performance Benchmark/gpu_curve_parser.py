@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import argparse
 import re
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from typing import Iterable, List, Optional, Dict
 
 import pandas as pd  # type: ignore
@@ -50,8 +50,20 @@ import requests
 __all__ = [
     "extract_axis_scaling",
     "refresh_axis_scaling",
+    "discover_gpu_names",
     "parse_gpu_curve",
     "scrape_gpu_curves",
+]
+
+# Fallback list used only when discovery fails
+_FALLBACK_GPU_NAMES: List[str] = [
+    "A16", "A17 Pro", "A18", "A18 Pro", "A19", "A19 Pro",
+    "SD8 Elite Gen5", "SD8 Elite (9600)", "SD8 Elite (8533)",
+    "SD8 Gen3", "SD8 Gen2", "SD8 Gen1", "SD7+ Gen3", "SD7 Gen2",
+    "D9500", "D9400 (10667)", "D9400 (8533)", "D9300+", "D9300 Ultra", "D9300",
+    "D9200+", "D9200", "D8400 MAX", "D8300 Ultra", "D8300", "D8200", "D8100", "D8000",
+    "D7200", "K9020", "K9010", "K9000S", "K9000", "K8000", "Tensor G5", "Tensor G4", "Tensor G3",
+    "Tensor G2", "E2400", "E2400+", "XRIng 01"
 ]
 
 ###############################################################################
@@ -168,6 +180,39 @@ def _to_score(y: float) -> float:
     return (Y_BASE - y) / Y_HEIGHT * SCORE_RANGE
 
 
+def discover_gpu_names(
+    layer_url: str = "https://www.socpk.com/gpucurve/layer/gpu/",
+    *,
+    fallback_pages: Optional[List[str]] = None,
+) -> List[str]:
+    """Return GPU names by scraping available SVG filenames from SocPK."""
+    urls = [layer_url]
+    urls.extend(fallback_pages or [
+        "https://www.socpk.com/gpucurve/",
+        "https://www.socpk.com/gpucurve/gb6/layer/gpu/",
+    ])
+    deduped_urls: List[str] = []
+    for url in urls:
+        if url not in deduped_urls:
+            deduped_urls.append(url)
+    names: List[str] = []
+    seen = set()
+    for url in deduped_urls:
+        try:
+            resp = requests.get(url, timeout=10)
+            if not resp.ok:
+                continue
+            html = resp.text
+        except Exception:
+            continue
+        for match in re.finditer(r"3dmark_snl_([^\"'>]+?)\.svg", html, re.IGNORECASE):
+            decoded = unquote(match.group(1))
+            if decoded not in seen:
+                seen.add(decoded)
+                names.append(decoded)
+    return names
+
+
 def parse_gpu_curve(
     gpu_name: str,
     base_url: str = "https://www.socpk.com/gpucurve/layer/gpu/",
@@ -240,10 +285,12 @@ def scrape_gpu_curves(
     ----------
     gpu_names : iterable of str, optional
         Names of GPUs/SoCs to scrape.  If ``None`` (default), the
-        function uses ``default_gpu_names`` if provided; otherwise
-        falls back to a built‑in list of common GPUs.
+        function auto-discovers available GPU curves from SocPK; if
+        that yields no results it uses ``default_gpu_names`` (when
+        provided) or an internal fallback list.
     default_gpu_names : list of str, optional
-        Optional fallback list used when ``gpu_names`` is ``None``.
+        Optional fallback list used when ``gpu_names`` is ``None`` and
+        discovery fails.
 
     Returns
     -------
@@ -260,15 +307,11 @@ def scrape_gpu_curves(
     if gpu_names is not None:
         names = list(gpu_names)
     else:
-        names = default_gpu_names or [
-            "A16", "A17 Pro", "A18", "A18 Pro", "A19", "A19 Pro",
-            "SD8 Elite Gen5", "SD8 Elite (9600)", "SD8 Elite (8533)",
-            "SD8 Gen3", "SD8 Gen2", "SD8 Gen1", "SD7+ Gen3", "SD7 Gen2",
-            "D9500", "D9400 (10647)", "D9400 (8533)", "D9300+", "D9300 Ultra", "D9300",
-            "D9200+", "D9200", "D8400 MAX", "D8300 Ultra", "D8300", "D8200", "D8100", "D8000",
-            "D7200", "K9020", "K9010", "K9000S", "K9000", "K8000", "Tensor G5", "Tensor G4", "Tensor G3",
-            "Tensor G2", "E2400", "E2400+", "XRIng 01"
-        ]
+        names = discover_gpu_names()
+        if not names and default_gpu_names is not None:
+            names = default_gpu_names
+        if not names:
+            names = _FALLBACK_GPU_NAMES
     frames: List[pd.DataFrame] = []
     for name in names:
         try:

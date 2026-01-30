@@ -45,7 +45,7 @@ SITE_URLS = {
         "https://www.socpk.com/batlife/3.5/50cl1st.js?22",
         "https://www.socpk.com/batlife/3.5/",
     ],
-    "main": [
+    "3.0": [
         "https://www.socpk.com/batlife/50cl1st.js?22",
         "https://www.socpk.com/batlife/",
     ],
