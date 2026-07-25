@@ -5,7 +5,7 @@ gpu_curve_parser.py
 This module provides functions and a command‑line interface to scrape
 SocPK’s GPU (Steel Nomad Light) efficiency curves.  Each GPU curve is
 published as its own SVG under
-``https://www.socpk.com/gpucurve/gb6/layer/gpu/``.  The parser reads
+``https://www.socpk.com/assets/curves/gpu-snl/gpu/``.  The parser reads
 the base axes layer to derive the conversion from pixel positions to
 physical board power (W) and GPU performance score, and can process
 both continuous curves and scatter‑point curves.  A convenience
@@ -15,9 +15,8 @@ into a single pandas DataFrame.
 Key features
 ------------
 
-* **Dynamic axis scaling.**  The script extracts the horizontal and
-  vertical scaling from the base axes layer, so if the chart ranges
-  change in future, the computed values will still be accurate.
+* **Current axis geometry.**  The script extracts horizontal and
+  vertical plot bounds from the current base axes layer.
 * **Support for continuous and scatter curves.**  Some GPUs (e.g. Adreno
   in Snapdragon chips) publish full curves, while others provide a
   handful of scatter points.  ``parse_gpu_curve`` handles both.
@@ -40,12 +39,23 @@ Then analyse and plot with the companion ``curve_analysis`` script.
 from __future__ import annotations
 
 import argparse
-import re
-from urllib.parse import quote, unquote
+import sys
+from pathlib import Path
+from urllib.parse import quote, unquote, urljoin, urlparse
 from typing import Iterable, List, Optional, Dict
 
 import pandas as pd  # type: ignore
 import requests
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from socpk_client import (  # noqa: E402
+    extract_axis_geometry,
+    extract_curve_coordinates,
+    fetch_curve_manifest,
+)
 
 __all__ = [
     "extract_axis_scaling",
@@ -55,29 +65,33 @@ __all__ = [
     "scrape_gpu_curves",
 ]
 
+GPU_PAGE_URL = "https://www.socpk.com/gpucurve/"
+GPU_AXIS_URL = (
+    "https://www.socpk.com/assets/curves/gpu-snl/"
+    "3DMark%20Steel%20Nomad%20Light_asis.svg"
+)
+GPU_LAYER_BASE_URL = "https://www.socpk.com/assets/curves/gpu-snl/gpu/"
+
 # Fallback list used only when discovery fails
 _FALLBACK_GPU_NAMES: List[str] = [
     "A16", "A17 Pro", "A18", "A18 Pro", "A19", "A19 Pro",
-    "SD8 Elite Gen5", "SD8 Elite (9600)", "SD8 Elite (8533)",
-    "SD8 Gen3", "SD8 Gen2", "SD8 Gen1", "SD7+ Gen3", "SD7 Gen2",
-    "D9500", "D9400 (10667)", "D9400 (8533)", "D9300+", "D9300 Ultra", "D9300",
-    "D9200+", "D9200", "D8400 MAX", "D8300 Ultra", "D8300", "D8200", "D8100", "D8000",
-    "D7200", "K9020", "K9010", "K9000S", "K9000", "K8000", "Tensor G5", "Tensor G4", "Tensor G3",
-    "Tensor G2", "E2400", "E2400+", "XRIng 01"
+    "SD8 Elite Gen5", "SD8 Elite (9600)", "SD8 Elite (8533)", "SD8 Gen5",
+    "SD8 Gen3", "SD8 Gen2", "SD8 Gen1", "SD8+ Gen1", "SD8s Gen3",
+    "SD7+ Gen2", "SD780G", "D9500", "D9400 (10667)", "D9400 (8533)",
+    "D9300+", "D9200+", "D9000", "D8400 MAX", "D8300 Ultra", "D8200",
+    "D8100", "D1200", "K9020", "Tensor G4", "Tensor G3", "E2400",
+    "XRing O1",
 ]
 
 ###############################################################################
 # Axis scaling defaults and helpers
 ###############################################################################
 
-# Default axis constants derived from a typical GPU efficiency chart on
-# SocPK.  These values represent the pixel extents of the axes and the
-# maximum board‑power and score ranges.  They will be updated at
-# runtime by ``refresh_axis_scaling`` if the base layer can be
-# downloaded.
+# Current SNL axis ranges and fallback geometry.  Runtime refresh updates
+# geometry; the site's outlined tick labels are not machine-readable text.
 X_START: float = 144.0
 X_WIDTH: float = 892.8
-POWER_RANGE: float = 22.0  # Default maximum board power in watts
+POWER_RANGE: float = 18.0  # Current SNL chart maximum board power in watts
 
 Y_BASE: float = 576.7
 Y_HEIGHT: float = 498.96
@@ -85,7 +99,7 @@ SCORE_RANGE: float = 4000.0  # Default maximum GPU score (SNL)
 
 
 def extract_axis_scaling(
-    base_svg_url: str = "https://www.socpk.com/gpucurve/layer/3DMark%20Steel%20Nomad%20Light_asis.svg",
+    base_svg_url: str = GPU_AXIS_URL,
 ) -> Optional[Dict[str, float]]:
     """Extract axis scaling parameters from the GPU base axes layer.
 
@@ -107,55 +121,11 @@ def extract_axis_scaling(
         resp.raise_for_status()
     except Exception:
         return None
-    svg = resp.text
-    # Horizontal axis path: M<x_start>,<y_base>h<width>
-    h_match = re.search(r"M\s*([0-9.]+),([0-9.]+)\s*h\s*([0-9.]+)", svg)
-    # Vertical axis path: M<x_start>,<y_base>V<y_top>
-    v_match = re.search(r"M\s*([0-9.]+),([0-9.]+)\s*V\s*([0-9.]+)", svg)
-    if not h_match or not v_match:
-        return None
-    try:
-        x_start = float(h_match.group(1))
-        y_base = float(h_match.group(2))
-        x_width = float(h_match.group(3))
-        y_top = float(v_match.group(3))
-    except ValueError:
-        return None
-    y_height = abs(y_base - y_top)
-    # Extract numeric tick labels to infer ranges.  Values ≤100 are
-    # considered board power; values >100 are considered GPU scores.
-    labels = re.findall(r"<text[^>]*>([^<]+)</text>", svg)
-    numbers: List[float] = []
-    for lab in labels:
-        s = lab.strip().replace(',', '')
-        s_lower = s.lower()
-        mult = 1.0
-        if 'k' in s_lower:
-            mult = 1000.0
-            s_lower = s_lower.replace('k', '')
-        if '万' in s_lower:
-            mult = 10000.0
-            s_lower = s_lower.replace('万', '')
-        m = re.match(r"-?[0-9.]+", s_lower)
-        if not m:
-            continue
-        try:
-            val = float(m.group(0))
-        except ValueError:
-            continue
-        numbers.append(val * mult)
-    board = [n for n in numbers if n <= 100.0]
-    score = [n for n in numbers if n > 100.0]
-    power_range = max(board) if board else POWER_RANGE
-    score_range = max(score) if score else SCORE_RANGE
-    return {
-        'X_START': x_start,
-        'X_WIDTH': x_width,
-        'POWER_RANGE': power_range,
-        'Y_BASE': y_base,
-        'Y_HEIGHT': y_height,
-        'SCORE_RANGE': score_range,
-    }
+    return extract_axis_geometry(
+        resp.text,
+        power_range=POWER_RANGE,
+        score_range=SCORE_RANGE,
+    )
 
 
 def refresh_axis_scaling() -> bool:
@@ -181,41 +151,53 @@ def _to_score(y: float) -> float:
 
 
 def discover_gpu_names(
-    layer_url: str = "https://www.socpk.com/gpucurve/layer/gpu/",
+    layer_url: str = GPU_PAGE_URL,
     *,
     fallback_pages: Optional[List[str]] = None,
 ) -> List[str]:
-    """Return GPU names by scraping available SVG filenames from SocPK."""
-    urls = [layer_url]
-    urls.extend(fallback_pages or [
-        "https://www.socpk.com/gpucurve/",
-        "https://www.socpk.com/gpucurve/gb6/layer/gpu/",
-    ])
-    deduped_urls: List[str] = []
-    for url in urls:
-        if url not in deduped_urls:
-            deduped_urls.append(url)
-    names: List[str] = []
-    seen = set()
-    for url in deduped_urls:
-        try:
-            resp = requests.get(url, timeout=10)
-            if not resp.ok:
-                continue
-            html = resp.text
-        except Exception:
+    """Return GPU names published in the current SoCPK curve manifest."""
+    del fallback_pages  # Retained for API compatibility with older callers.
+    try:
+        return list(_gpu_layer_urls(layer_url))
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def _gpu_layer_urls(page_url: str = GPU_PAGE_URL) -> Dict[str, str]:
+    """Return current curve names mapped to absolute SVG URLs."""
+    manifest = fetch_curve_manifest(page_url)
+    config = manifest.get("gpuSnl")
+    if not isinstance(config, dict):
+        raise ValueError("SoCPK manifest contains no gpuSnl configuration.")
+
+    result = {}
+    for layer in config.get("layers", []):
+        src = layer.get("src") if isinstance(layer, dict) else None
+        if not isinstance(src, str):
             continue
-        for match in re.finditer(r"3dmark_snl_([^\"'>]+?)\.svg", html, re.IGNORECASE):
-            decoded = unquote(match.group(1))
-            if decoded not in seen:
-                seen.add(decoded)
-                names.append(decoded)
-    return names
+        filename = unquote(urlparse(src).path.rsplit("/", 1)[-1])
+        if not filename.startswith("3dmark_snl_") or not filename.endswith(".svg"):
+            continue
+        name = filename[len("3dmark_snl_"):-len(".svg")]
+        result[name] = urljoin(page_url, src)
+    return result
+
+
+def _gpu_curve_url(gpu_name: str) -> str:
+    try:
+        layers = _gpu_layer_urls()
+        by_casefold = {name.casefold(): url for name, url in layers.items()}
+        manifest_url = by_casefold.get(gpu_name.casefold())
+        if manifest_url:
+            return manifest_url
+    except (requests.RequestException, ValueError):
+        pass
+    return f"{GPU_LAYER_BASE_URL}3dmark_snl_{quote(gpu_name, safe='')}.svg"
 
 
 def parse_gpu_curve(
     gpu_name: str,
-    base_url: str = "https://www.socpk.com/gpucurve/layer/gpu/",
+    base_url: Optional[str] = None,
 ) -> Optional[pd.DataFrame]:
     """Download and parse a single GPU efficiency curve.
 
@@ -240,35 +222,22 @@ def parse_gpu_curve(
     ``<g id="line2d_1">``; scatter curves use multiple ``<use>``
     elements.  Both formats are handled automatically.
     """
-    encoded = quote(gpu_name, safe='')
-    svg_url = f"{base_url}3dmark_snl_{encoded}.svg"
+    if base_url is not None:
+        svg_url = (
+            f"{base_url.rstrip('/')}/3dmark_snl_{quote(gpu_name, safe='')}.svg"
+        )
+    else:
+        svg_url = _gpu_curve_url(gpu_name)
     try:
         resp = requests.get(svg_url, timeout=10)
     except requests.RequestException:
         return None
     if not resp.ok:
         return None
-    svg = resp.text
-    # Continuous curve detection
-    # Use single quotes outside so that double quotes inside the pattern are
-    # not prematurely terminated.  This regex matches a <path> element
-    # inside a <g id="line2d_1"> group and captures the d attribute.
-    path_match = re.search(r'<g id="line2d_1">\s*<path[^>]* d="([^"]+)"', svg)
-    points: List[tuple[float, float]] = []
-    if path_match:
-        d_attr = path_match.group(1)
-        nums = [float(s) for s in re.findall(r"[-+]?[0-9]*\.?[0-9]+", d_attr)]
-        coords = list(zip(nums[0::2], nums[1::2]))
-        for x, y in coords:
-            points.append((_to_board_power(x), _to_score(y)))
-    else:
-        # Fallback to scatter points via <use>
-        for m in re.finditer(r"<use[^>]+x=\"([0-9.]+)\"[^>]+y=\"([0-9.]+)\"", svg):
-            x = float(m.group(1))
-            y = float(m.group(2))
-            points.append((_to_board_power(x), _to_score(y)))
-    if not points:
+    coordinates = extract_curve_coordinates(resp.text)
+    if not coordinates:
         return None
+    points = [(_to_board_power(x), _to_score(y)) for x, y in coordinates]
     df = pd.DataFrame(points, columns=["Board_Power_W", "GPU_Score"])
     df['Efficiency'] = df['GPU_Score'] / df['Board_Power_W'].replace(0, pd.NA)
     return df
@@ -336,14 +305,14 @@ def main() -> None:
     """Command‑line interface for scraping GPU curves.
 
     Use ``--gpus`` to specify one or more SoC names to scrape.  If
-    omitted, a default list of common GPUs is used.  Use ``--output``
+    omitted, current curve names are discovered.  Use ``--output``
     to write the combined results to a CSV file; otherwise the
     DataFrame is printed to stdout.
     """
     parser = argparse.ArgumentParser(description="Scrape Steel Nomad Light GPU curves from SocPK")
     parser.add_argument('--gpus', nargs='*', default=None,
                         help="Names of GPUs/SoCs to scrape (e.g. 'A19 Pro' 'SD8 Elite Gen5').  "
-                             "If omitted, a default list is used.")
+                             "If omitted, current curves are discovered.")
     parser.add_argument('--output', type=str, default="gpu_curves.csv",
                         help="Path to a CSV file where results will be written.  "
                              "If not provided, the DataFrame is printed.")

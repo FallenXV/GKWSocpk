@@ -5,7 +5,8 @@
 Battery Life Parser & Efficiency + GSMArena Enrichment
 
 Features
-- Fetch SoCPK 续航 JS (3.5 legacy or main site via --site), robustly extract arr=[...]
+- Fetch current SoCPK 5.0 data from the site's versioned application bundle
+- Retain support for legacy SoCPK JS files containing arr=[...]
 - Compute:
     * Avg Power (W) = capacityWh*60 / minutes
     * Minutes per Wh (min/Wh) = minutes / capacityWh
@@ -33,22 +34,26 @@ import time
 import argparse
 import requests
 import unicodedata
+import sys
+from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from urllib.parse import urljoin
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from socpk_client import (  # noqa: E402
+    RANKINGS_PAYLOAD_KEY,
+    decode_embedded_payload,
+)
 
 # -----------------------------
 # SoCPK data sources & defaults
 # -----------------------------
-DEFAULT_SITE_KEY = "3.5"
+DEFAULT_SITE_KEY = "5.0"
 SITE_URLS = {
-    "3.5": [
-        "https://www.socpk.com/batlife/3.5/50cl1st.js?22",
-        "https://www.socpk.com/batlife/3.5/",
-    ],
-    "3.0": [
-        "https://www.socpk.com/batlife/50cl1st.js?22",
-        "https://www.socpk.com/batlife/",
-    ],
+    "5.0": ["https://www.socpk.com/batlife/"],
 }
 DEFAULT_CSV = "results.csv"
 
@@ -94,12 +99,18 @@ BRAND_MAP_ZH_TO_EN = {
     "苹果": "Apple",
     "三星": "Samsung",
     "小米": "Xiaomi",
+    "红米": "Redmi",
     "OPPO": "OPPO",
     "一加": "OnePlus",
     "华为": "Huawei",
     "荣耀": "Honor",
     "vivo": "vivo",
     "iQOO": "iQOO",
+    "真我": "realme",
+    "Realme": "realme",
+    "努比亚": "nubia",
+    "谷歌": "Google",
+    "红魔": "RedMagic",
 }
 REV_BRAND_MAP_EN_TO_ZH = {}
 for zh, en in BRAND_MAP_ZH_TO_EN.items():
@@ -148,6 +159,43 @@ def fetch_text(url: str) -> str:
 def discover_js_from_html(html: str, base_url: str) -> List[str]:
     srcs = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', html, flags=re.I)
     return [urljoin(base_url, s) for s in srcs]
+
+
+def parse_battery_rows(source_text: str) -> List[List]:
+    """Parse current embedded battery data or a legacy ``arr=[...]`` source."""
+    if re.search(r"\b(?:var|let|const)\s+arr\s*=", source_text):
+        return parse_rows_from_js(extract_array_literal(source_text))
+
+    payload = decode_embedded_payload(source_text, RANKINGS_PAYLOAD_KEY)
+    rows = payload.get("battery50") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("SoCPK payload contains no battery50 rows.")
+    return rows
+
+
+def fetch_battery_rows(urls: List[str]) -> List[List]:
+    """Fetch battery rows from current SPA pages or legacy direct JS URLs."""
+    errors = []
+    for url in urls:
+        try:
+            text = fetch_text(url)
+            candidates = [text]
+            if url.endswith("/") or "<html" in text.lower():
+                for script_url in discover_js_from_html(text, url):
+                    try:
+                        candidates.append(fetch_text(script_url))
+                    except requests.RequestException as exc:
+                        errors.append(f"{script_url}: {exc}")
+            for candidate in candidates:
+                try:
+                    return parse_battery_rows(candidate)
+                except ValueError:
+                    continue
+            errors.append(f"{url}: no recognized battery dataset")
+        except (requests.RequestException, ValueError) as exc:
+            errors.append(f"{url}: {exc}")
+    detail = "; ".join(errors)
+    raise ValueError(f"Could not fetch SoCPK battery data. {detail}")
 
 # -----------------------------
 # Robust arr=[ ... ] extraction
@@ -587,9 +635,7 @@ def print_correlations(records: List[Dict]) -> None:
 def main():
     ap = argparse.ArgumentParser(description="SoCPK Battery Efficiency + GSMArena enrichment")
     ap.add_argument("--site", choices=sorted(SITE_URLS.keys()), default=DEFAULT_SITE_KEY,
-                    help=("Which SoCPK batlife site to target: "
-                          "'3.5' for https://www.socpk.com/batlife/3.5/ (default) or "
-                          "'main' for https://www.socpk.com/batlife/"))
+                    help="Which SoCPK battery dataset to target (default: 5.0)")
     ap.add_argument("--url", action="append", help="Override SoCPK source URL(s)")
     ap.add_argument("--csv", help=f"Output CSV path (default: {DEFAULT_CSV})")
     ap.add_argument("--json", help="Optional JSON output path")
@@ -610,36 +656,15 @@ def main():
                     help="Compute simple Pearson correlations vs efficiency")
     args = ap.parse_args()
 
-    # 1) Fetch SoCPK JS that defines arr=[...]
+    # 1) Fetch current SPA data or a legacy JS source that defines arr=[...]
     default_urls = SITE_URLS.get(args.site, SITE_URLS[DEFAULT_SITE_KEY])
     urls = args.url if args.url else default_urls
-    js_text = None
-    for url in urls:
-        try:
-            txt = fetch_text(url)
-            if url.endswith("/") or "<html" in txt.lower():
-                for ju in discover_js_from_html(txt, url):
-                    try:
-                        jst = fetch_text(ju)
-                        if re.search(r'\barr\s*=', jst):
-                            js_text = jst; break
-                    except:
-                        continue
-            else:
-                if re.search(r'\barr\s*=', txt):
-                    js_text = txt
-            if js_text:
-                break
-        except:
-            continue
-    if not js_text:
-        raise SystemExit("Could not fetch a JS file containing arr=[...].")
+    try:
+        raw_rows = fetch_battery_rows(urls)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
-    # 2) Extract & parse rows
-    array_lit = extract_array_literal(js_text)
-    raw_rows = parse_rows_from_js(array_lit)
-
-    # 3) Build records + metrics
+    # 2) Build records + metrics
     records = rows_to_records(raw_rows, brand_lang=args.brand_lang)
     if not records:
         raise SystemExit("No valid rows parsed.")
