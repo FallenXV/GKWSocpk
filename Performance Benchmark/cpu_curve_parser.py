@@ -5,7 +5,7 @@ cpu_curve_parser.py
 This module provides both a library and a command‑line interface for
 extracting Geekbench 6 multi‑core performance curves from the SocPK
 website.  Each processor’s curve is published as a separate SVG
-under ``https://www.socpk.com/cpucurve/gb6/layer/cpu/``.  The
+under ``https://www.socpk.com/assets/curves/cpu-gb6/cpu/``.  The
 underlying functions convert pixel positions in the SVG into
 physical board power (W) and Geekbench score by reading the base
 axis layer ``Geekbench 6_asis.svg``.  A convenience function
@@ -15,11 +15,8 @@ aggregates the results into a single pandas DataFrame.
 Key features
 ------------
 
-* **Dynamic axis scaling.**  Before parsing any curves the script
-  fetches the base axis layer and derives the horizontal and
-  vertical scaling.  This ensures that if SocPK increases the
-  maximum board‑power or score displayed, the computed values will
-  still be correct.
+* **Current axis geometry.**  Before parsing curves the script fetches
+  the base axis layer and derives its horizontal and vertical bounds.
 * **Support for continuous and scatter curves.**  Some chips
   (e.g. Qualcomm Snapdragon) publish a continuous line, while
   others (e.g. Apple A‑series) only provide a few scatter points.
@@ -54,27 +51,54 @@ this file with the companion ``curve_analysis`` script.
 from __future__ import annotations
 
 import argparse
-import re
-from urllib.parse import quote
+import sys
+from pathlib import Path
+from urllib.parse import quote, unquote, urljoin, urlparse
 from typing import Iterable, List, Optional, Dict
 
 import pandas as pd  # type: ignore
 import requests
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from socpk_client import (  # noqa: E402
+    extract_axis_geometry,
+    extract_curve_coordinates,
+    fetch_curve_manifest,
+)
+
 __all__ = [
     "extract_axis_scaling",
     "refresh_axis_scaling",
+    "discover_cpu_names",
     "parse_cpu_curve",
     "scrape_cpu_curves",
+]
+
+CPU_PAGE_URL = "https://www.socpk.com/cpucurve/gb6/"
+CPU_AXIS_URL = (
+    "https://www.socpk.com/assets/curves/cpu-gb6/Geekbench%206_asis.svg"
+)
+CPU_LAYER_BASE_URL = "https://www.socpk.com/assets/curves/cpu-gb6/cpu/"
+
+_FALLBACK_CPU_NAMES: List[str] = [
+    "A16", "A17 Pro", "A18", "A18 Pro", "A19", "A19 Pro",
+    "SD8 Elite Gen5", "SD8 Elite (9600)", "SD8 Elite (8533)",
+    "SD8 Gen5", "SD8 Gen3", "SD8 Gen2", "SD8+ Gen1", "SD8s Gen3",
+    "SD7+ Gen3", "D9500", "D9400 (10667)", "D9400 (8533)",
+    "D9300+", "D9200+", "D8400 MAX", "D8300 Ultra", "K9020",
+    "K9010", "K9000S", "K9000SL", "K8000", "Tensor G4",
+    "Tensor G3", "E2400", "XRing O1",
 ]
 
 ###############################################################################
 # Axis scaling constants and helpers
 ###############################################################################
 
-# Default axis mapping values.  These correspond to the GB6 base layer
-# as of September 2025.  If the site increases the chart extents, these
-# values will be updated at runtime by ``refresh_axis_scaling``.
+# Current GB6 axis ranges.  Runtime refresh updates the SVG plot geometry;
+# the site's outlined tick labels are not machine-readable text.
 X_START: float = 144.0
 X_WIDTH: float = 892.8
 POWER_RANGE: float = 22.0
@@ -85,17 +109,13 @@ SCORE_RANGE: float = 15000.0
 
 
 def extract_axis_scaling(
-    base_svg_url: str = "https://www.socpk.com/cpucurve/gb6/layer/Geekbench%206_asis.svg",
+    base_svg_url: str = CPU_AXIS_URL,
 ) -> Optional[Dict[str, float]]:
     """Derive dynamic axis scaling from the base GB6 axes layer.
 
-    The base SVG defines the grid and axes for all curves.  The
-    horizontal axis is encoded as a path ``M<x_start>,<y_base>h<width>``
-    and the vertical axis as ``M<x_start>,<y_base>V<y_top>``.  Text
-    labels on the axes indicate the maximum board power and score
-    displayed.  This function fetches the SVG, extracts these values
-    and returns a mapping of constants.  If the request fails or
-    parsing is unsuccessful, ``None`` is returned.
+    The base SVG defines the grid and axes for all curves.  This function
+    fetches it, extracts the plotting bounds, and combines those bounds
+    with the current GB6 power and score ranges.
 
     Parameters
     ----------
@@ -115,56 +135,11 @@ def extract_axis_scaling(
         resp.raise_for_status()
     except Exception:
         return None
-    svg = resp.text
-    # Match horizontal axis: M<x_start>,<y_base>h<width>
-    h_match = re.search(r"M\s*([0-9.]+),([0-9.]+)\s*h\s*([0-9.]+)", svg)
-    # Match vertical axis: M<x_start>,<y_base>V<y_top>
-    v_match = re.search(r"M\s*([0-9.]+),([0-9.]+)\s*V\s*([0-9.]+)", svg)
-    if not h_match or not v_match:
-        return None
-    try:
-        x_start = float(h_match.group(1))
-        y_base = float(h_match.group(2))
-        x_width = float(h_match.group(3))
-        y_top = float(v_match.group(3))
-    except ValueError:
-        return None
-    y_height = abs(y_base - y_top)
-    # Extract numeric tick labels to infer ranges.  We interpret
-    # values <=100 as board‑power and values >100 as score.  Suffixes
-    # like 'k' or Chinese '万' are handled.
-    labels = re.findall(r"<text[^>]*>([^<]+)</text>", svg)
-    numbers: List[float] = []
-    for lab in labels:
-        s = lab.strip().replace(',', '')
-        s_lower = s.lower()
-        mult = 1.0
-        if 'k' in s_lower:
-            mult = 1000.0
-            s_lower = s_lower.replace('k', '')
-        if '万' in s_lower:
-            mult = 10000.0
-            s_lower = s_lower.replace('万', '')
-        m = re.match(r"-?[0-9.]+", s_lower)
-        if not m:
-            continue
-        try:
-            val = float(m.group(0))
-        except ValueError:
-            continue
-        numbers.append(val * mult)
-    board = [n for n in numbers if n <= 100.0]
-    score = [n for n in numbers if n > 100.0]
-    power_range = max(board) if board else POWER_RANGE
-    score_range = max(score) if score else SCORE_RANGE
-    return {
-        "X_START": x_start,
-        "X_WIDTH": x_width,
-        "POWER_RANGE": power_range,
-        "Y_BASE": y_base,
-        "Y_HEIGHT": y_height,
-        "SCORE_RANGE": score_range,
-    }
+    return extract_axis_geometry(
+        resp.text,
+        power_range=POWER_RANGE,
+        score_range=SCORE_RANGE,
+    )
 
 
 def refresh_axis_scaling() -> bool:
@@ -192,9 +167,49 @@ def _to_score(y: float) -> float:
     return (Y_BASE - y) / Y_HEIGHT * SCORE_RANGE
 
 
+def _cpu_layer_urls() -> Dict[str, str]:
+    """Return current curve names mapped to absolute SVG URLs."""
+    manifest = fetch_curve_manifest(CPU_PAGE_URL)
+    config = manifest.get("cpuGb6")
+    if not isinstance(config, dict):
+        raise ValueError("SoCPK manifest contains no cpuGb6 configuration.")
+
+    result = {}
+    for layer in config.get("layers", []):
+        src = layer.get("src") if isinstance(layer, dict) else None
+        if not isinstance(src, str):
+            continue
+        filename = unquote(urlparse(src).path.rsplit("/", 1)[-1])
+        if not filename.startswith("CPU_gb6_") or not filename.endswith(".svg"):
+            continue
+        name = filename[len("CPU_gb6_"):-len(".svg")]
+        result[name] = urljoin(CPU_PAGE_URL, src)
+    return result
+
+
+def discover_cpu_names() -> List[str]:
+    """Return CPU names published in the current SoCPK curve manifest."""
+    try:
+        return list(_cpu_layer_urls())
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def _cpu_curve_url(cpu_name: str) -> str:
+    try:
+        layers = _cpu_layer_urls()
+        by_casefold = {name.casefold(): url for name, url in layers.items()}
+        manifest_url = by_casefold.get(cpu_name.casefold())
+        if manifest_url:
+            return manifest_url
+    except (requests.RequestException, ValueError):
+        pass
+    return f"{CPU_LAYER_BASE_URL}CPU_gb6_{quote(cpu_name, safe='')}.svg"
+
+
 def parse_cpu_curve(
     cpu_name: str,
-    base_url: str = "https://www.socpk.com/cpucurve/gb6/layer/cpu/",
+    base_url: Optional[str] = None,
 ) -> Optional[pd.DataFrame]:
     """Download and parse a single CPU efficiency curve.
 
@@ -220,37 +235,20 @@ def parse_cpu_curve(
     such element exists, it falls back to scatter points defined by
     ``<use x="..." y="...">``.  Only numeric coordinates are used.
     """
-    # Construct the filename and URL; quote spaces and special chars.
-    encoded = quote(cpu_name, safe='')
-    svg_url = f"{base_url}CPU_gb6_{encoded}.svg"
+    if base_url is not None:
+        svg_url = f"{base_url.rstrip('/')}/CPU_gb6_{quote(cpu_name, safe='')}.svg"
+    else:
+        svg_url = _cpu_curve_url(cpu_name)
     try:
         resp = requests.get(svg_url, timeout=10)
     except requests.RequestException:
         return None
     if not resp.ok:
         return None
-    svg = resp.text
-    # Try continuous curve
-    # Use single quotes outside so that double quotes inside the pattern are
-    # not prematurely terminated.  This regex matches a <path> element inside
-    # a <g id="line2d_1"> group and captures the entire d attribute.
-    path_match = re.search(r'<g id="line2d_1">\s*<path[^>]* d="([^"]+)"', svg)
-    points: List[tuple[float, float]] = []
-    if path_match:
-        d_attr = path_match.group(1)
-        # Extract all floats from the path string
-        nums = [float(s) for s in re.findall(r"[-+]?[0-9]*\.?[0-9]+", d_attr)]
-        coords = list(zip(nums[0::2], nums[1::2]))
-        for x, y in coords:
-            points.append((_to_board_power(x), _to_score(y)))
-    else:
-        # Fallback: scatter points defined in <use> tags
-        for m in re.finditer(r"<use[^>]+x=\"([0-9.]+)\"[^>]+y=\"([0-9.]+)\"", svg):
-            x = float(m.group(1))
-            y = float(m.group(2))
-            points.append((_to_board_power(x), _to_score(y)))
-    if not points:
+    coordinates = extract_curve_coordinates(resp.text)
+    if not coordinates:
         return None
+    points = [(_to_board_power(x), _to_score(y)) for x, y in coordinates]
     df = pd.DataFrame(points, columns=["Board_Power_W", "GB6_Multi_Score"])
     # Compute efficiency; avoid division by zero
     df['Efficiency'] = df['GB6_Multi_Score'] / df['Board_Power_W'].replace(0, pd.NA)
@@ -267,13 +265,10 @@ def scrape_cpu_curves(
     Parameters
     ----------
     cpu_names : iterable of str, optional
-        Names of CPUs to scrape.  If ``None``, the function uses
-        ``default_cpu_names`` if provided; otherwise it falls back to
-        a built‑in list of Apple and Android SoCs.
+        Names of CPUs to scrape.  If ``None``, names are discovered from
+        the current SoCPK manifest, then optional/default fallbacks are used.
     default_cpu_names : list of str, optional
-        Fallback list of CPU names to use when ``cpu_names`` is
-        ``None``.  If omitted, a hard‑coded list of processors is
-        used.
+        Fallback list used only if current manifest discovery fails.
 
     Returns
     -------
@@ -291,17 +286,11 @@ def scrape_cpu_curves(
     if cpu_names is not None:
         names = list(cpu_names)
     else:
-        # Fallback list of common CPUs on the GB6 page
-        names = default_cpu_names or [
-            "A16", "A17 Pro", "A18", "A18 Pro", "A19", "A19 Pro",
-            "SD8 Elite Gen5", "SD8 Elite (9600)", "SD8 Elite (8533)",
-            "SD8 Gen3", "SD8 Gen2", "SD8 Gen1", "SD8+ Gen1", "SD7+ Gen3",
-            "SD7+ Gen2", "SD7 Gen3", "SD7 Gen2",
-            "D9500", "D9400 (10667)", "D9400 (8533)", "D9300+", "D9300 Ultra",
-            "D9300", "D9200+", "D9200", "D8400 MAX", "D8300 Ultra", "D8300",
-            "D8200", "D8100", "K9020", "K9010", "K9000S", "K9000SL", "K9000",
-            "K8000", "Tensor G4", "Tensor G3", "Tensor G2", "E2400", "XRing.01"
-        ]
+        names = discover_cpu_names()
+        if not names and default_cpu_names is not None:
+            names = default_cpu_names
+        if not names:
+            names = _FALLBACK_CPU_NAMES
     frames: List[pd.DataFrame] = []
     for name in names:
         try:
@@ -326,14 +315,14 @@ def main() -> None:
     """Entry point for the command‑line interface.
 
     Use ``--cpus`` to specify one or more CPU names to scrape.  If
-    omitted, a default list will be used.  Use ``--output`` to write
+    omitted, current curve names are discovered.  Use ``--output`` to write
     the aggregated results to a CSV file; otherwise the DataFrame is
     printed to stdout.
     """
     parser = argparse.ArgumentParser(description="Scrape Geekbench 6 CPU curves from SocPK")
     parser.add_argument('--cpus', nargs='*', default=None,
                         help="Names of CPUs to scrape (e.g. 'A19 Pro' 'SD8 Elite Gen5').  "
-                             "If omitted, a default list is used.")
+                             "If omitted, current curves are discovered.")
     parser.add_argument('--output', type=str, default="cpu_curves.csv",
                         help="Path to a CSV file where results will be written.  "
                              "If not provided, the DataFrame is printed.")
