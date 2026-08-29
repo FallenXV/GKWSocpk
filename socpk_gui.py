@@ -26,6 +26,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 
 
@@ -79,6 +80,111 @@ class HoverPoint:
     color: str
 
 
+@dataclass(frozen=True)
+class BatteryCapacityMeasurement:
+    advertised_mah: int
+    measured_mah: int
+
+    @property
+    def shortfall_mah(self) -> int:
+        return self.advertised_mah - self.measured_mah
+
+    @property
+    def shortfall_pct(self) -> float:
+        return self.shortfall_mah / self.advertised_mah * 100.0
+
+
+_BATTERY_BRAND_ALIASES = {
+    "苹果": "apple",
+    "三星": "samsung",
+    "谷歌": "google",
+    "华为": "huawei",
+    "一加": "oneplus",
+    "真我": "realme",
+    "红魔": "redmagic",
+    "努比亚": "nubia",
+    "小米": "xiaomi",
+    "红米": "redmi",
+    "荣耀": "honor",
+}
+
+
+def _battery_key(brand: str, model: str) -> tuple[str, str]:
+    normalized_brand = _BATTERY_BRAND_ALIASES.get(brand.strip().casefold(), brand.strip().casefold())
+    normalized_model = (
+        model.strip()
+        .casefold()
+        .replace("至尊版", "supreme edition")
+        .replace("+", " plus ")
+    )
+    normalized_model = "".join(character for character in normalized_model if character.isalnum())
+    return normalized_brand, normalized_model
+
+
+_GEEKERWAN_CAPACITY_ROWS = (
+    ("Samsung", "S26 Ultra", 5000, 4775),
+    ("Google", "Pixel 10 Pro XL", 5200, 5134),
+    ("Apple", "iPhone 17 Pro Max", 4823, 4718),
+    ("Huawei", "Mate 80 Pro", 5750, 5552),
+    ("Huawei", "Mate 70 Pro+", 5700, 5431),
+    ("OPPO", "Find X9", 7025, 6873),
+    ("OnePlus", "Ace 6 Supreme Edition", 8600, 8202),
+    ("OnePlus", "Ace 6", 7800, 7472),
+    ("OnePlus", "15", 7300, 7084),
+    ("OnePlus", "13", 6000, 5252),
+    ("Realme", "GT8 Pro", 7000, 6736),
+    ("Realme", "GT8", 7000, 6598),
+    ("vivo", "X300s", 7100, 6520),
+    ("vivo", "X300", 6040, 5588),
+    ("iQOO", "15T", 8000, 7368),
+    ("iQOO", "15", 7000, 6155),
+    ("iQOO", "13", 6150, 5452),
+    ("RedMagic", "11 Pro", 8000, 7243),
+    ("Nubia", "Z80 Ultra", 7200, 6276),
+    ("Xiaomi", "17 Pro Max", 7500, 6581),
+    ("Xiaomi", "17", 7000, 6120),
+    ("Xiaomi", "15", 5400, 4789),
+    ("Redmi", "K90 Max", 8550, 8002),
+    ("Redmi", "K90", 7100, 6572),
+    ("Redmi", "K80 Pro", 6000, 5565),
+    ("Honor", "WIN", 10000, 8568),
+    ("Honor", "GT Pro", 7200, 6151),
+)
+
+GEEKERWAN_CAPACITY_MEASUREMENTS = {
+    _battery_key(brand, model): BatteryCapacityMeasurement(advertised, measured)
+    for brand, model, advertised, measured in _GEEKERWAN_CAPACITY_ROWS
+}
+
+
+def add_geekerwan_capacity_overlay(frame: pd.DataFrame) -> pd.DataFrame:
+    """Attach static measured-capacity points without changing pulled SoCPK values."""
+    frame = frame.copy()
+    measurements = [
+        GEEKERWAN_CAPACITY_MEASUREMENTS.get(_battery_key(str(brand), str(model)))
+        for brand, model in zip(frame["brand"], frame["model"])
+    ]
+    advertised = pd.Series(
+        [measurement.advertised_mah if measurement else np.nan for measurement in measurements],
+        index=frame.index,
+        dtype=float,
+    )
+    measured = pd.Series(
+        [measurement.measured_mah if measurement else np.nan for measurement in measurements],
+        index=frame.index,
+        dtype=float,
+    )
+    ratio = measured / advertised
+    frame["geekerwanAdvertisedMah"] = advertised
+    frame["geekerwanMeasuredMah"] = measured
+    frame["geekerwanShortfallMah"] = advertised - measured
+    frame["geekerwanShortfallPct"] = (advertised - measured) / advertised * 100.0
+    frame["geekerwanCapacityWh"] = frame["capacityWh"] * ratio
+    frame["geekerwanAvgPowerW"] = frame["avgPowerW"] * ratio
+    frame["geekerwanMinPerWh"] = frame["minPerWh"] / ratio
+    return frame
+
+
 DATASET_DEFINITIONS = {
     "CPU": DatasetDefinition(
         key="CPU",
@@ -92,13 +198,23 @@ DATASET_DEFINITIONS = {
     ),
     "GPU": DatasetDefinition(
         key="GPU",
-        title="GPU efficiency",
-        kicker="Graphics performance",
+        title="Mobile GPU performance",
+        kicker="3DMark Steel Nomad Light",
         id_column="GPU",
         required=frozenset({"GPU", "Board_Power_W", "GPU_Score"}),
         numeric=("Board_Power_W", "GPU_Score", "Efficiency"),
         dedupe=("GPU", "Board_Power_W", "GPU_Score"),
-        views=("Efficiency curve", "Performance curve", "Efficiency vs score"),
+        views=("Performance curve", "Efficiency curve", "Efficiency vs score"),
+    ),
+    "Laptop GPU": DatasetDefinition(
+        key="Laptop GPU",
+        title="Laptop GPU performance",
+        kicker="3DMark Time Spy Graphics",
+        id_column="GPU",
+        required=frozenset({"GPU", "Board_Power_W", "GPU_Score"}),
+        numeric=("Board_Power_W", "GPU_Score", "Efficiency"),
+        dedupe=("GPU", "Board_Power_W", "GPU_Score"),
+        views=("Performance curve", "Efficiency curve", "Efficiency vs score"),
     ),
     "Battery": DatasetDefinition(
         key="Battery",
@@ -112,14 +228,46 @@ DATASET_DEFINITIONS = {
     ),
 }
 
+CURVE_DATASETS = frozenset({"CPU", "GPU", "Laptop GPU"})
+
 
 def classify_columns(columns: Iterable[str]) -> str | None:
     """Return the recognized dataset kind for a CSV schema."""
     column_set = frozenset(columns)
-    for key, definition in DATASET_DEFINITIONS.items():
+    for key in ("CPU", "GPU", "Battery"):
+        definition = DATASET_DEFINITIONS[key]
         if definition.required.issubset(column_set):
             return key
     return None
+
+
+def classify_frame(frame: pd.DataFrame, path: Path) -> str | None:
+    """Classify a CSV, separating incompatible mobile and laptop GPU scores."""
+    kind = classify_columns(frame.columns)
+    if kind != "GPU":
+        return kind
+
+    source_name = str(path).casefold().replace("-", "_")
+    if "laptop_gpu" in source_name or "laptopgpu" in source_name:
+        return "Laptop GPU"
+
+    descriptor_columns = [
+        column
+        for column in ("Platform", "platform", "Benchmark", "benchmark")
+        if column in frame
+    ]
+    descriptors = " ".join(
+        frame[column].dropna().astype(str).str.casefold().str.cat(sep=" ")
+        for column in descriptor_columns
+    )
+    if "laptop" in descriptors or "time spy" in descriptors:
+        return "Laptop GPU"
+
+    power = pd.to_numeric(frame.get("Board_Power_W"), errors="coerce")
+    score = pd.to_numeric(frame.get("GPU_Score"), errors="coerce")
+    if power.max(skipna=True) > 30 or score.max(skipna=True) > 5000:
+        return "Laptop GPU"
+    return "GPU"
 
 
 def discover_csv_files(root: Path) -> list[Path]:
@@ -152,7 +300,7 @@ def _prepare_frame(
         if column in frame:
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
-    if kind in {"CPU", "GPU"}:
+    if kind in CURVE_DATASETS:
         score_column = "GB6_Multi_Score" if kind == "CPU" else "GPU_Score"
         if "Efficiency" not in frame:
             frame["Efficiency"] = frame[score_column] / frame["Board_Power_W"]
@@ -186,6 +334,7 @@ def _prepare_frame(
         frame.loc[repeated & os_name.ne(""), "__label"] = (
             base[repeated & os_name.ne("")] + " — " + os_name[repeated & os_name.ne("")]
         )
+        frame = add_geekerwan_capacity_overlay(frame)
 
     frame["__source"] = _source_label(source, root)
     return frame
@@ -207,7 +356,7 @@ def load_collections(
         except Exception as exc:
             warnings.append(f"{path.name}: {exc}")
             continue
-        kind = classify_columns(frame.columns)
+        kind = classify_frame(frame, path)
         if kind is None:
             continue
         try:
@@ -596,32 +745,25 @@ class ComparisonDashboard:
 
     def reload_data(self, initial_dataset: str | None = None) -> None:
         collections, warnings = load_collections(self.project_root, self.csv_paths)
-        if not collections:
-            messagebox.showerror(
-                "No SoCPK data found",
-                "No recognized CPU, GPU, or battery CSV files were found.",
-                parent=self.root,
-            )
-            return
         self.collections = collections
         self.load_warnings = warnings
         self.selected = {
             key: self.selected.get(key, set()) & set(frame["__label"].unique())
             for key, frame in collections.items()
         }
-        for key, button in self.nav_buttons.items():
-            if key in collections:
-                button.state(["!disabled"])
-            else:
-                button.state(["disabled"])
+        for button in self.nav_buttons.values():
+            button.state(["!disabled"])
 
-        target = initial_dataset if initial_dataset in collections else self.dataset_key
-        if target not in collections:
-            target = next(key for key in DATASET_DEFINITIONS if key in collections)
+        target = initial_dataset if initial_dataset in DATASET_DEFINITIONS else self.dataset_key
+        if target not in DATASET_DEFINITIONS:
+            target = next(
+                (key for key in DATASET_DEFINITIONS if key in collections),
+                next(iter(DATASET_DEFINITIONS)),
+            )
         self.set_dataset(target, choose_defaults=not bool(self.selected.get(target)))
 
     def set_dataset(self, key: str, choose_defaults: bool = True) -> None:
-        if key not in self.collections:
+        if key not in DATASET_DEFINITIONS:
             return
         self.dataset_key = key
         definition = DATASET_DEFINITIONS[key]
@@ -632,6 +774,12 @@ class ComparisonDashboard:
         self.view_combo.configure(values=definition.views)
         self.view_var.set(definition.views[0])
         self.search_var.set("")
+        self.selected.setdefault(key, set())
+        if key not in self.collections:
+            self.visible_labels = []
+            self.profile_list.delete(0, tk.END)
+            self._draw_unavailable_dataset(definition)
+            return
         if choose_defaults and not self.selected.get(key):
             self.selected[key] = set(self._ranked_labels(key)[:5])
         self.refresh_profile_list()
@@ -639,14 +787,22 @@ class ComparisonDashboard:
 
     def _ranked_labels(self, key: str) -> list[str]:
         frame = self.collections[key]
-        if key in {"CPU", "GPU"}:
-            ranking = frame.groupby("__label", sort=False)["Efficiency"].max().sort_values(ascending=False)
+        if key in CURVE_DATASETS:
+            metric = "Efficiency" if key == "CPU" else "GPU_Score"
+            ranking = (
+                frame.groupby("__label", sort=False)[metric]
+                .max()
+                .sort_values(ascending=False)
+            )
         else:
             ranking = frame.groupby("__label", sort=False)["minPerWh"].max().sort_values(ascending=False)
         return list(ranking.index)
 
     def refresh_profile_list(self) -> None:
         if self.dataset_key not in self.collections:
+            self.visible_labels = []
+            self.profile_list.delete(0, tk.END)
+            self._update_selection_note()
             return
         needle = self.search_var.get().strip().casefold()
         labels = sorted(
@@ -676,6 +832,8 @@ class ComparisonDashboard:
         self.draw_charts()
 
     def select_top_five(self) -> None:
+        if self.dataset_key not in self.collections:
+            return
         self.selected[self.dataset_key] = set(self._ranked_labels(self.dataset_key)[:5])
         self.refresh_profile_list()
         self.draw_charts()
@@ -726,7 +884,7 @@ class ComparisonDashboard:
         self.hover_horizontal = None
         if selected_frame.empty:
             self._draw_empty()
-        elif self.dataset_key in {"CPU", "GPU"}:
+        elif self.dataset_key in CURVE_DATASETS:
             self._draw_curve_charts(selected_frame)
         else:
             self._draw_battery_charts(selected_frame)
@@ -758,11 +916,94 @@ class ComparisonDashboard:
             axis.set_yticks([])
         self.chart_note.configure(text="No profiles selected")
 
+    def _draw_unavailable_dataset(self, definition: DatasetDefinition) -> None:
+        self.ranking_values = pd.Series(dtype=float)
+        self.ranking_offset = 0
+        commands = {
+            "CPU": (
+                "cpu_curves.csv",
+                'python "Performance Benchmark\\cpu_curve_parser.py"',
+            ),
+            "GPU": (
+                "gpu_curves.csv",
+                'python "Performance Benchmark\\gpu_curve_parser.py"',
+            ),
+            "Laptop GPU": (
+                "laptop_gpu_curves.csv",
+                'python "Performance Benchmark\\gpu_curve_parser.py" --platform laptop',
+            ),
+            "Battery": (
+                "results.csv",
+                "python Battery\\battery_parser.py",
+            ),
+        }
+        filename, command = commands[definition.key]
+        self._style_axis(
+            self.main_axis,
+            f"No {definition.title.lower()} data yet",
+            f"Expected {filename}",
+        )
+        self.main_axis.text(
+            0.5,
+            0.56,
+            "Generate the dataset, then choose Reload data",
+            transform=self.main_axis.transAxes,
+            ha="center",
+            va="center",
+            color=TEXT,
+            fontsize=12,
+            fontweight="bold",
+        )
+        self.main_axis.text(
+            0.5,
+            0.44,
+            command,
+            transform=self.main_axis.transAxes,
+            ha="center",
+            va="center",
+            color=CYAN,
+            fontsize=10,
+            fontfamily="monospace",
+            bbox={
+                "boxstyle": "round,pad=0.7",
+                "facecolor": APP_BG,
+                "edgecolor": GRID,
+            },
+        )
+        self.main_axis.set_xticks([])
+        self.main_axis.set_yticks([])
+
+        self._style_axis(self.rank_axis, "Selected ranking", "waiting for data")
+        self.rank_axis.text(
+            0.5,
+            0.5,
+            "Nothing to rank yet",
+            transform=self.rank_axis.transAxes,
+            ha="center",
+            va="center",
+            color=MUTED,
+            fontsize=10,
+        )
+        self.rank_axis.set_xticks([])
+        self.rank_axis.set_yticks([])
+
+        self.stat_values["profiles"].configure(text="0 / 0")
+        self.stat_values["points"].configure(text="0")
+        self.stat_values["leader"].configure(text="—")
+        self.selection_note.configure(text="0 selected · 0 shown · 0 available")
+        self.source_note.configure(text="No matching CSV found")
+        self.chart_note.configure(text=f"Waiting for {filename}")
+        self.canvas.draw_idle()
+
     def _draw_curve_charts(self, frame: pd.DataFrame) -> None:
         kind = self.dataset_key
         view = self.view_var.get()
         score_column = "GB6_Multi_Score" if kind == "CPU" else "GPU_Score"
-        score_label = "Geekbench 6 multi score" if kind == "CPU" else "GPU score"
+        score_label = {
+            "CPU": "Geekbench 6 multi score",
+            "GPU": "Steel Nomad Light score",
+            "Laptop GPU": "Time Spy graphics score",
+        }[kind]
         if view == "Performance curve":
             x_column, y_column = "Board_Power_W", score_column
             x_label, y_label = "Board power (W)", score_label
@@ -874,6 +1115,13 @@ class ComparisonDashboard:
                 capacityWh=("capacityWh", "mean"),
                 avgPowerW=("avgPowerW", "mean"),
                 minPerWh=("minPerWh", "mean"),
+                geekerwanAdvertisedMah=("geekerwanAdvertisedMah", "mean"),
+                geekerwanMeasuredMah=("geekerwanMeasuredMah", "mean"),
+                geekerwanShortfallMah=("geekerwanShortfallMah", "mean"),
+                geekerwanShortfallPct=("geekerwanShortfallPct", "mean"),
+                geekerwanCapacityWh=("geekerwanCapacityWh", "mean"),
+                geekerwanAvgPowerW=("geekerwanAvgPowerW", "mean"),
+                geekerwanMinPerWh=("geekerwanMinPerWh", "mean"),
             )
         )
         labels = sorted(summary["__label"], key=str.casefold)
@@ -894,6 +1142,16 @@ class ComparisonDashboard:
             x_label, y_label = "Battery capacity (Wh)", "Runtime (hours)"
             title = "Endurance landscape"
             rank_column, rank_label, higher = "hours", "Runtime (hours)", True
+
+        measured_columns = {
+            "capacityWh": "geekerwanCapacityWh",
+            "avgPowerW": "geekerwanAvgPowerW",
+            "minPerWh": "geekerwanMinPerWh",
+            "hours": "hours",
+        }
+        measured_x_column = measured_columns[x_column]
+        measured_y_column = measured_columns[y_column]
+        measured_count = int(summary["geekerwanMeasuredMah"].notna().sum())
 
         show_point_labels = len(summary) <= 18
         interaction_note = (
@@ -942,6 +1200,51 @@ class ComparisonDashboard:
                         color=color,
                     )
                 )
+            if pd.notna(row["geekerwanMeasuredMah"]):
+                measured_x = float(row[measured_x_column])
+                measured_y = float(row[measured_y_column])
+                self.main_axis.plot(
+                    [x_value, measured_x],
+                    [y_value, measured_y],
+                    color=color,
+                    linestyle=(0, (2, 2)),
+                    linewidth=1.2,
+                    alpha=0.7,
+                    zorder=2,
+                )
+                measured_points = self.main_axis.scatter(
+                    measured_x,
+                    measured_y,
+                    s=88,
+                    marker="D",
+                    facecolor=PLOT_BG,
+                    edgecolor=color,
+                    linewidth=2.0,
+                    zorder=4,
+                    picker=True,
+                )
+                measured_label = f"{label} · Geekerwan measured"
+                measured_points._socpk_label = measured_label
+                self.line_artists.append(measured_points)
+                self.hover_points.append(
+                    HoverPoint(
+                        x=measured_x,
+                        y=measured_y,
+                        label=measured_label,
+                        details=(
+                            f"{label}\n"
+                            "Geekerwan measured usable capacity\n"
+                            f"Measured: {float(row['geekerwanMeasuredMah']):,.0f} mAh "
+                            f"of {float(row['geekerwanAdvertisedMah']):,.0f} mAh\n"
+                            f"Locked/lost: {float(row['geekerwanShortfallMah']):,.0f} mAh "
+                            f"({float(row['geekerwanShortfallPct']):.2f}%)\n"
+                            f"Adjusted capacity: {float(row['geekerwanCapacityWh']):.2f} Wh\n"
+                            f"Adjusted average power: {float(row['geekerwanAvgPowerW']):.2f} W\n"
+                            f"Adjusted efficiency: {float(row['geekerwanMinPerWh']):.2f} min/Wh"
+                        ),
+                        color=color,
+                    )
+                )
             if show_point_labels:
                 self.main_axis.annotate(
                     self._short_label(label, 24),
@@ -952,9 +1255,36 @@ class ComparisonDashboard:
                     fontsize=8,
                     alpha=0.9,
                 )
+        if measured_count:
+            legend = self.main_axis.legend(
+                handles=(
+                    Line2D(
+                        [], [], marker="o", linestyle="none", markersize=7,
+                        markerfacecolor=MUTED, markeredgecolor=PLOT_BG,
+                        label="SoCPK / advertised capacity",
+                    ),
+                    Line2D(
+                        [], [], marker="D", linestyle="none", markersize=7,
+                        markerfacecolor=PLOT_BG, markeredgecolor=MUTED,
+                        markeredgewidth=1.8, label="Geekerwan measured capacity",
+                    ),
+                ),
+                loc="best",
+                frameon=True,
+                facecolor=PANEL_2,
+                edgecolor=GRID,
+                labelcolor=TEXT,
+                fontsize=8,
+            )
+            legend.get_frame().set_alpha(0.92)
         ranking = summary.set_index("__label")[rank_column]
         self._draw_ranking(ranking, rank_label, higher_is_better=higher)
-        self.chart_note.configure(text=f"{len(frame):,} battery tests shown")
+        self.chart_note.configure(
+            text=(
+                f"{len(frame):,} battery tests shown · "
+                f"{measured_count} Geekerwan measured overlays"
+            )
+        )
 
     def _draw_ranking(
         self,
@@ -1080,7 +1410,7 @@ class ComparisonDashboard:
         self.stat_values["points"].configure(text=f"{len(frame):,}")
         if frame.empty:
             leader = "—"
-        elif self.dataset_key in {"CPU", "GPU"}:
+        elif self.dataset_key in CURVE_DATASETS:
             metric = (
                 "GB6_Multi_Score"
                 if self.view_var.get() == "Performance curve" and self.dataset_key == "CPU"
@@ -1110,7 +1440,11 @@ class ComparisonDashboard:
             return
         selected_count = len(self.selected.get(self.dataset_key, set()))
         shown = len(self.visible_labels)
-        total = self.collections[self.dataset_key]["__label"].nunique()
+        total = (
+            self.collections[self.dataset_key]["__label"].nunique()
+            if self.dataset_key in self.collections
+            else 0
+        )
         self.selection_note.configure(
             text=f"{selected_count} selected · {shown} shown · {total} available"
         )

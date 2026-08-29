@@ -21,6 +21,7 @@ _MODULE_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+_PATH_TOKEN_RE = re.compile(rf"[A-Za-z]|{_NUMBER}")
 
 
 def discover_module_urls(html: str, page_url: str) -> list[str]:
@@ -182,3 +183,175 @@ def extract_curve_coordinates(svg: str) -> list[tuple[float, float]]:
         except (KeyError, ValueError):
             continue
     return points
+
+
+def extract_laptop_curve_coordinates(svg: str) -> list[tuple[float, float]]:
+    """Extract a curve from the older Excel-exported laptop GPU SVG format."""
+    try:
+        root = ElementTree.fromstring(svg)
+    except ElementTree.ParseError:
+        return []
+
+    translated_paths = _paths_with_translation(root)
+    if not translated_paths:
+        return []
+    path, translate_x, translate_y = translated_paths[0]
+    path_points = _parse_svg_path_points(path.get("d", ""))
+    if not path_points:
+        return []
+
+    fill = (path.get("fill") or "").strip().lower()
+    if fill and fill != "none":
+        xs = [point[0] for point in path_points]
+        ys = [point[1] for point in path_points]
+        path_points = [((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)]
+
+    return [
+        (x + translate_x, y + translate_y)
+        for x, y in path_points
+    ]
+
+
+def _paths_with_translation(
+    root: ElementTree.Element,
+) -> list[tuple[ElementTree.Element, float, float]]:
+    result = []
+
+    def visit(element: ElementTree.Element, parent_x: float, parent_y: float) -> None:
+        translate_x, translate_y = _translation(element.get("transform", ""))
+        current_x = parent_x + translate_x
+        current_y = parent_y + translate_y
+        if (
+            element.tag.rsplit("}", 1)[-1] == "path"
+            and element.get("d")
+        ):
+            result.append((element, current_x, current_y))
+        for child in element:
+            visit(child, current_x, current_y)
+
+    visit(root, 0.0, 0.0)
+    return result
+
+
+def _translation(transform: str) -> tuple[float, float]:
+    match = re.search(
+        rf"translate\(\s*({_NUMBER})(?:[\s,]+({_NUMBER}))?\s*\)",
+        transform,
+        re.IGNORECASE,
+    )
+    if not match:
+        return 0.0, 0.0
+    return float(match.group(1)), float(match.group(2) or 0)
+
+
+def _parse_svg_path_points(path_data: str) -> list[tuple[float, float]]:
+    tokens = _PATH_TOKEN_RE.findall(path_data)
+    points = []
+    index = 0
+    command = ""
+    current_x = current_y = 0.0
+    start_x = start_y = 0.0
+
+    parameter_counts = {
+        "M": 2, "L": 2, "T": 2,
+        "H": 1, "V": 1,
+        "C": 6, "S": 4, "Q": 4,
+        "A": 7,
+    }
+
+    while index < len(tokens):
+        token = tokens[index]
+        if token.isalpha():
+            command = token
+            index += 1
+            if command.upper() == "Z":
+                current_x, current_y = start_x, start_y
+                continue
+        if not command:
+            return []
+
+        upper = command.upper()
+        count = parameter_counts.get(upper)
+        if count is None or index + count > len(tokens):
+            break
+        try:
+            values = [float(value) for value in tokens[index:index + count]]
+        except ValueError:
+            break
+        index += count
+
+        relative = command.islower()
+        if upper in {"M", "L", "T"}:
+            x, y = values[-2:]
+        elif upper == "H":
+            x, y = values[0], current_y
+        elif upper == "V":
+            x, y = current_x, values[0]
+        else:
+            x, y = values[-2:]
+
+        if relative:
+            if upper == "H":
+                x += current_x
+            elif upper == "V":
+                y += current_y
+            else:
+                x += current_x
+                y += current_y
+        current_x, current_y = x, y
+        points.append((x, y))
+
+        if upper == "M":
+            start_x, start_y = x, y
+            command = "l" if relative else "L"
+
+    return points
+
+
+def extract_laptop_axis_geometry(svg: str) -> dict[str, float] | None:
+    """Extract rendered plot bounds and ranges from laptop GPU axis SVG."""
+    translate_x, translate_y = _translation(svg)
+    segment_re = re.compile(
+        rf"M\s*({_NUMBER})[\s,]+({_NUMBER})[\s,]+"
+        rf"({_NUMBER})[\s,]+({_NUMBER})"
+    )
+    horizontal = []
+    vertical = []
+    for match in segment_re.finditer(svg):
+        x1, y1, x2, y2 = map(float, match.groups())
+        if abs(y1 - y2) < 0.1 and abs(x2 - x1) > 100:
+            horizontal.append((x1, y1, x2, y2))
+        if abs(x1 - x2) < 0.1 and abs(y2 - y1) > 100:
+            vertical.append((x1, y1, x2, y2))
+    if not horizontal or not vertical:
+        return None
+
+    x_start = min(min(segment[0], segment[2]) for segment in horizontal)
+    x_end = max(max(segment[0], segment[2]) for segment in horizontal)
+    plot_vertical = [
+        segment
+        for segment in vertical
+        if x_start - 1 <= segment[0] <= x_end + 1
+    ]
+    if not plot_vertical:
+        return None
+    y_base = max(max(segment[1], segment[3]) for segment in plot_vertical)
+    y_top = min(min(segment[1], segment[3]) for segment in plot_vertical)
+
+    labels = [
+        float(value)
+        for value in re.findall(r"<text\b[^>]*>\s*([0-9.]+)\s*</text>", svg)
+    ]
+    power_labels = [value for value in labels if value <= 1000]
+    score_labels = [value for value in labels if value > 1000]
+    if not power_labels or not score_labels:
+        return None
+
+    return {
+        "X_START": x_start + translate_x,
+        "X_WIDTH": x_end - x_start,
+        "POWER_RANGE": max(power_labels),
+        "Y_BASE": y_base + translate_y,
+        "Y_HEIGHT": y_base - y_top,
+        "SCORE_RANGE": max(score_labels),
+    }

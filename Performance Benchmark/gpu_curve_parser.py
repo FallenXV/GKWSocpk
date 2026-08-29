@@ -2,15 +2,13 @@
 gpu_curve_parser.py
 ===================
 
-This module provides functions and a command‑line interface to scrape
-SocPK’s GPU (Steel Nomad Light) efficiency curves.  Each GPU curve is
+This module provides functions and a command-line interface to scrape
+SocPK’s phone Steel Nomad Light efficiency curves.  Each curve is
 published as its own SVG under
 ``https://www.socpk.com/assets/curves/gpu-snl/gpu/``.  The parser reads
 the base axes layer to derive the conversion from pixel positions to
 physical board power (W) and GPU performance score, and can process
-both continuous curves and scatter‑point curves.  A convenience
-function ``scrape_gpu_curves`` aggregates data from multiple chips
-into a single pandas DataFrame.
+continuous and scatter-point Matplotlib SVG curves.
 
 Key features
 ------------
@@ -305,27 +303,23 @@ def main() -> None:
     """Command‑line interface for scraping GPU curves.
 
     Use ``--gpus`` to specify one or more SoC names to scrape.  If
-    omitted, current curve names are discovered.  Use ``--output``
-    to write the combined results to a CSV file; otherwise the
-    DataFrame is printed to stdout.
+    omitted, current phone GPU curve names are discovered.
     """
-    parser = argparse.ArgumentParser(description="Scrape Steel Nomad Light GPU curves from SocPK")
+    parser = argparse.ArgumentParser(
+        description="Scrape phone Steel Nomad Light GPU curves from SocPK"
+    )
     parser.add_argument('--gpus', nargs='*', default=None,
-                        help="Names of GPUs/SoCs to scrape (e.g. 'A19 Pro' 'SD8 Elite Gen5').  "
+                        help="Names to scrape (e.g. 'A19 Pro').  "
                              "If omitted, current curves are discovered.")
     parser.add_argument('--output', type=str, default="gpu_curves.csv",
-                        help="Path to a CSV file where results will be written.  "
-                             "If not provided, the DataFrame is printed.")
+                        help="Output CSV path (default: gpu_curves.csv).")
     args = parser.parse_args()
     df = scrape_gpu_curves(args.gpus)
     if df.empty:
         print("No GPU curves scraped.  Check network connectivity or update the processor list.")
         return
-    if args.output:
-        df.to_csv(args.output, index=False)
-        print(f"Scraped {len(df)} rows for {df['GPU'].nunique()} GPUs → {args.output}")
-    else:
-        print(df)
+    df.to_csv(args.output, index=False)
+    print(f"Scraped {len(df)} rows for {df['GPU'].nunique()} GPUs → {args.output}")
 
 
 if __name__ == '__main__':
