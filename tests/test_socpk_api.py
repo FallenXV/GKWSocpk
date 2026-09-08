@@ -141,8 +141,8 @@ class ChartApiTests(unittest.TestCase):
             metadata["series"][0]["points"] = points
             with patch("socpk_client.fetch_chart_page", return_value=metadata), self.assertRaises(ValueError):
                 fetch_curve_series("test")
-        metadata["config"]["xUnit"] = "min"
-        with patch("socpk_client.fetch_chart_page", return_value=metadata), self.assertRaises(ValueError):
+        wrong_unit = {**page(), "config": {"xUnit": "min"}}
+        with patch("socpk_client.fetch_chart_page", return_value=wrong_unit), self.assertRaises(ValueError):
             fetch_curve_series("test")
 
 
@@ -209,7 +209,10 @@ class ParserIntegrationTests(unittest.TestCase):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as directory:
                 target = Path(directory) / "existing.csv"
                 target.write_bytes(b"historical\r\n")
-                with patch("socpk_client.fetch_chart_page", return_value=metadata), \
+                # CPU batch polling imports the fetcher directly.
+                fetch_patch = (patch.object(module, "fetch_chart_page", return_value=metadata)
+                               if kind == "CPU" else patch("socpk_client.fetch_chart_page", return_value=metadata))
+                with fetch_patch, \
                      patch("sys.argv", [filename, "--output", str(target)]):
                     module.main()
                 self.assertEqual(target.read_bytes(), b"historical\r\n")

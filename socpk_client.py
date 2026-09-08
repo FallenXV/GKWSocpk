@@ -26,6 +26,8 @@ GPU_PAGE_SLUG = "mobile-soc-efficiency-snl"
 LAPTOP_GPU_PAGE_SLUG = "laptop-gpu-efficiency"
 BATTERY_PAGE_SLUG = "battery-life-5-0"
 
+_USER_AGENT = "Mozilla/5.0 (SoCPK parser)"
+
 
 def decode_chart_blob(encoded: str) -> float | list:
     """Decode the public API's chart codec (September 2026).
@@ -66,15 +68,16 @@ def decode_chart_blob(encoded: str) -> float | list:
         value = varint()
         return (value >> 1) ^ -(value & 1)
 
+    is_line = raw[0] == 1
     y_scale, y_offset = random() * 1.8 + 0.6, (random() * 2 - 1) * 5000
     x_scale, x_offset = random() * 1.8 + 0.6, (random() * 2 - 1) * 5000
     count = varint()
-    if count > (65536 if raw[0] == 1 else 131072):
+    if count > (65536 if is_line else 131072):
         raise ValueError("Too many values in SoCPK chart blob.")
     values = []
     x = y = 0
     for _ in range(count):
-        if raw[0] == 1:
+        if is_line:
             x_noise, y_noise = (random() * 2 - 1) * 2500, (random() * 2 - 1) * 2500
             x += signed()
             y += signed()
@@ -87,7 +90,7 @@ def decode_chart_blob(encoded: str) -> float | list:
             values.append((signed() / 10000 - y_offset - noise) / y_scale)
     if offset != len(raw):
         raise ValueError("Unexpected trailing SoCPK chart data.")
-    return values[0] if raw[0] == 2 and len(values) == 1 else values
+    return values[0] if not is_line and len(values) == 1 else values
 
 
 def fetch_chart_page(
@@ -100,7 +103,7 @@ def fetch_chart_page(
     """
     page_url = urljoin(root_url, f"/api/pages/{slug}")
     with requests.Session() as session:
-        session.headers.update({"User-Agent": "Mozilla/5.0 (SoCPK parser)"})
+        session.headers.update({"User-Agent": _USER_AGENT})
         for attempt in range(2):
             params = {"_": str(time.time_ns() // 1000000)} if attempt else None
             response = session.get(page_url, params=params, timeout=timeout)
@@ -140,13 +143,21 @@ def fetch_chart_page(
     raise ValueError(f"Could not refresh SoCPK chart data: {slug}.")
 
 
+_WHITESPACE_RE = re.compile(r"\s+")
+_NAME_PREFIXES = tuple(
+    (re.compile(rf"{short}\d"), len(short), full)
+    for short, full in (("sd", "snapdragon"), ("d", "dimensity"),
+                        ("k", "kirin"), ("e", "exynos"))
+)
+
+
+@lru_cache(maxsize=1024)
 def _curve_name_key(name: str) -> str:
     """Accept previous CLI abbreviations without conflating RAM variants."""
-    name = re.sub(r"\s+", "", name).casefold().removesuffix("bionic")
-    for short, full in (("sd", "snapdragon"), ("d", "dimensity"),
-                        ("k", "kirin"), ("e", "exynos")):
-        if re.match(rf"{short}\d", name):
-            return full + name[len(short):]
+    name = _WHITESPACE_RE.sub("", name).casefold().removesuffix("bionic")
+    for pattern, length, full in _NAME_PREFIXES:
+        if pattern.match(name):
+            return full + name[length:]
     return name
 
 
@@ -154,22 +165,34 @@ def fetch_curve_series(
     slug: str, names=None, *, suite: str | None = None,
 ) -> list[dict[str, Any]]:
     """Get validated series from one fresh poll, optionally selecting a suite."""
-    page = fetch_chart_page(slug)
+    return select_curve_series(fetch_chart_page(slug), names, suite=suite)
+
+
+def select_curve_series(
+    page: dict[str, Any], names=None, *, suite: str | None = None,
+    multiple_cores: bool = False,
+) -> list[dict[str, Any]]:
+    """Select and validate curves; SPEC chip selections include all its cores."""
     if page.get("type") != "line-chart" or page.get("config", {}).get("xUnit") != "W":
         raise ValueError("Expected a SoCPK power-versus-score chart in watts.")
     series = [item for item in page["series"]
               if suite is None or item.get("meta", {}).get("suite") == suite]
     if names is not None:
-        selected = []
+        by_key: dict[str, list[int]] = {}
+        for index, item in enumerate(series):
+            for key in {_curve_name_key(item.get("name", "")),
+                        _curve_name_key(item.get("name_en", ""))}:
+                by_key.setdefault(key, []).append(index)
+        selected: list[dict[str, Any]] = []
+        chosen: set[int] = set()
         for name in names:
-            matches = [item for item in series if _curve_name_key(name) in {
-                _curve_name_key(item.get("name", "")),
-                _curve_name_key(item.get("name_en", "")),
-            }]
-            if len(matches) != 1:
+            matches = by_key.get(_curve_name_key(name), ())
+            if not matches or (len(matches) != 1 and not multiple_cores):
                 raise ValueError(f"Unknown or ambiguous SoCPK curve: {name!r}.")
-            if matches[0] not in selected:
-                selected.append(matches[0])
+            for index in matches:
+                if index not in chosen:
+                    chosen.add(index)
+                    selected.append(series[index])
         series = selected
     for item in series:
         points = item.get("points")
@@ -183,16 +206,30 @@ def fetch_curve_series(
     return series
 
 
-def curve_frame(series, id_column: str, score_column: str):
-    """Convert decoded coordinates into the existing CSV schema."""
+def series_label(item: dict[str, Any]) -> str:
+    """Prefer the published English name, falling back to the local name."""
+    return item.get("name_en") or item["name"]
+
+
+def curve_frame(series, id_column: str | None, score_column: str):
+    """Convert decoded coordinates into the existing CSV schema.
+
+    ``id_column`` carries the chip name; ``None`` omits it for a single curve.
+    """
     import pandas as pd
 
-    rows = [
-        {id_column: item.get("name_en") or item["name"],
-         "Board_Power_W": power, score_column: score, "Efficiency": score / power}
-        for item in series for power, score in item["points"]
-    ]
-    return pd.DataFrame(rows, columns=[id_column, "Board_Power_W", score_column, "Efficiency"])
+    labels, powers, scores = [], [], []
+    for item in series:
+        label = series_label(item)
+        for power, score in item["points"]:
+            labels.append(label)
+            powers.append(power)
+            scores.append(score)
+    columns = {"Board_Power_W": powers, score_column: scores,
+               "Efficiency": [score / power for power, score in zip(powers, scores)]}
+    if id_column:
+        columns = {id_column: labels, **columns}
+    return pd.DataFrame(columns)
 
 
 def battery_rows_from_page(page: dict[str, Any]) -> list[list]:
@@ -297,7 +334,7 @@ def fetch_spa_payload(
     timeout: float = 30.0,
 ) -> Any:
     """Fetch a SoCPK page, discover its versioned bundle, and decode a payload."""
-    headers = {"User-Agent": "Mozilla/5.0 (SoCPK parser)"}
+    headers = {"User-Agent": _USER_AGENT}
     page = requests.get(page_url, headers=headers, timeout=timeout)
     page.raise_for_status()
 
@@ -316,11 +353,6 @@ def fetch_spa_payload(
 
     detail = "; ".join(errors)
     raise ValueError(f"Could not decode SoCPK payload. {detail}")
-
-
-def fetch_rankings(page_url: str = SOCPK_ROOT) -> dict[str, Any]:
-    """Return current battery rankings in the previously used payload shape."""
-    return {"battery50": battery_rows_from_page(fetch_chart_page(BATTERY_PAGE_SLUG, page_url))}
 
 
 def fetch_curve_manifest(page_url: str = SOCPK_ROOT) -> dict[str, Any]:

@@ -164,4 +164,5 @@ cython_debug/
 
 # Generated data
 *.csv
-
+archive/
+snapshots/

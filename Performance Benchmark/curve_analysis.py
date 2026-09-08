@@ -19,12 +19,20 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
+from pathlib import Path
 from typing import Tuple, Dict, List
 
 import pandas as pd  # type: ignore
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from cpu_benchmarks import CPU_BENCHMARKS, CORE_COLUMNS, cpu_profile_label
 
 
 # ----------------------------
@@ -47,7 +55,23 @@ def load_and_normalize(csv_path: str) -> Tuple[pd.DataFrame, str]:
     # Determine which label column exists
     if 'CPU' in df.columns:
         model_label = 'CPU'
-        score_label = 'GB6_Multi_Score'
+        matches = [(name, benchmark) for name, benchmark in CPU_BENCHMARKS.items()
+                   if benchmark.score_column in df.columns]
+        if len(matches) != 1:
+            raise ValueError("CPU CSV must contain exactly one recognized benchmark score column.")
+        name, benchmark = matches[0]
+        score_label = benchmark.score_column
+        if "Benchmark" in df and not df["Benchmark"].dropna().eq(name).all():
+            raise ValueError("Benchmark metadata does not match the score column.")
+        if benchmark.single_core:
+            if not {"Core", "Core_Group"}.issubset(df.columns):
+                raise ValueError("SPEC CSV requires Core and Core_Group columns.")
+            for column in CORE_COLUMNS:
+                if column not in df:
+                    df[column] = ""
+                df[column] = df[column].fillna("").astype(str).str.strip()
+            df["CPU"] = [cpu_profile_label(*values) for values in
+                         df[["CPU", *CORE_COLUMNS]].itertuples(index=False, name=None)]
     elif 'GPU' in df.columns:
         model_label = 'GPU'
         score_label = 'GPU_Score'

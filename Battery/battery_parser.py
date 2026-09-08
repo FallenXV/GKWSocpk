@@ -186,7 +186,8 @@ def fetch_battery_rows(urls: List[str]) -> List[List]:
             parsed = urlparse(url)
             if (parsed.hostname in {"socpk.com", "www.socpk.com"}
                     and parsed.path.rstrip("/") in {
-                        "", "/batlife", "/battery-life-5-0", "/api/pages/battery-life-5-0",
+                        "", "/batlife", f"/{BATTERY_PAGE_SLUG}",
+                        f"/api/pages/{BATTERY_PAGE_SLUG}",
                     }):
                 return battery_rows_from_page(fetch_chart_page(BATTERY_PAGE_SLUG, url))
             text = fetch_text(url)
@@ -767,21 +768,18 @@ def main():
         "delta_vs_best_power_pct","delta_vs_best_min_per_wh_pct","delta_vs_best_minutes_pct",
     ] + extra_spec_fields
 
-    csv_path = args.csv or DEFAULT_CSV
-    with new_snapshot(csv_path) as f:
-        csv_path = f.name
+    with new_snapshot(args.csv or DEFAULT_CSV) as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         for r in records:
             row = {k: r.get(k) for k in fieldnames}
             w.writerow(row)
-    print(f"Wrote CSV: {csv_path}")
+    print(f"Wrote CSV: {f.name}")
 
     if args.json:
         with new_snapshot(args.json) as f:
             json.dump(records, f, ensure_ascii=False, indent=2)
-            json_path = f.name
-        print(f"Wrote JSON: {json_path}")
+        print(f"Wrote JSON: {f.name}")
 
 if __name__ == "__main__":
     main()

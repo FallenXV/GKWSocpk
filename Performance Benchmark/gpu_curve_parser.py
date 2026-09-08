@@ -26,6 +26,7 @@ from socpk_client import (  # noqa: E402
     GPU_PAGE_SLUG,
     fetch_curve_series,
     curve_frame,
+    series_label,
     new_snapshot,
 )
 
@@ -113,8 +114,7 @@ def _to_score(y: float) -> float:
 
 def discover_gpu_names() -> List[str]:
     """Return names currently published in the chart API."""
-    return [item.get("name_en") or item["name"]
-            for item in fetch_curve_series(GPU_PAGE_SLUG)]
+    return [series_label(item) for item in fetch_curve_series(GPU_PAGE_SLUG)]
 
 
 def parse_gpu_curve(
@@ -123,15 +123,12 @@ def parse_gpu_curve(
 ) -> Optional[pd.DataFrame]:
     """Fetch one curve; an explicit base URL selects the legacy SVG parser."""
     if base_url is None:
-        frame = curve_frame(
-            fetch_curve_series(GPU_PAGE_SLUG, [gpu_name]),
-            "GPU", "GPU_Score",
+        return curve_frame(
+            fetch_curve_series(GPU_PAGE_SLUG, [gpu_name]), None, "GPU_Score",
         )
-        return frame.drop(columns=["GPU"])
-    if base_url is not None:
-        svg_url = (
-            f"{base_url.rstrip('/')}/3dmark_snl_{quote(gpu_name, safe='')}.svg"
-        )
+    svg_url = (
+        f"{base_url.rstrip('/')}/3dmark_snl_{quote(gpu_name, safe='')}.svg"
+    )
     try:
         resp = requests.get(svg_url, timeout=10)
     except requests.RequestException:
@@ -179,8 +176,7 @@ def main() -> None:
         return
     with new_snapshot(args.output) as output:
         frame.to_csv(output, index=False)
-        output_path = output.name
-    print(f"Scraped {len(frame)} rows for {frame['GPU'].nunique()} GPUs → {output_path}")
+    print(f"Scraped {len(frame)} rows for {frame['GPU'].nunique()} GPUs → {output.name}")
 
 
 if __name__ == '__main__':

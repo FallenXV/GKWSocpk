@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from cpu_benchmarks import CPU_BENCHMARKS, CORE_COLUMNS, cpu_profile_label
+
 import matplotlib
 import numpy as np
 import pandas as pd
@@ -69,6 +71,10 @@ class DatasetDefinition:
     numeric: tuple[str, ...]
     dedupe: tuple[str, ...]
     views: tuple[str, ...]
+    score_column: str = ""
+    score_label: str = ""
+    score_decimals: int = 0
+    tab_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -186,20 +192,32 @@ def add_geekerwan_capacity_overlay(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 DATASET_DEFINITIONS = {
-    "CPU": DatasetDefinition(
-        key="CPU",
-        title="CPU efficiency",
-        kicker="Geekbench 6 multi-core",
-        id_column="CPU",
-        required=frozenset({"CPU", "Board_Power_W", "GB6_Multi_Score"}),
-        numeric=("Board_Power_W", "GB6_Multi_Score", "Efficiency"),
-        dedupe=("CPU", "Board_Power_W", "GB6_Multi_Score"),
-        views=("Efficiency curve", "Performance curve", "Efficiency vs score"),
-    ),
+    **{
+        benchmark.dataset_key: DatasetDefinition(
+            key=benchmark.dataset_key,
+            title="Single-core efficiency" if benchmark.single_core else "Multi-core efficiency",
+            kicker=benchmark.title,
+            id_column="CPU",
+            required=frozenset({"CPU", "Board_Power_W", benchmark.score_column}
+                               | ({"Core", "Core_Group"} if benchmark.single_core else set())),
+            numeric=("Board_Power_W", benchmark.score_column, "Efficiency"),
+            dedupe=("CPU", *CORE_COLUMNS, "Board_Power_W", benchmark.score_column)
+                   if benchmark.single_core else ("CPU", "Board_Power_W", benchmark.score_column),
+            views=("Efficiency curve", "Performance curve", "Efficiency vs score"),
+            score_column=benchmark.score_column,
+            score_label=(f"SPEC 2026 {benchmark.suite} score" if benchmark.single_core
+                         else benchmark.title + " score"),
+            score_decimals=3 if benchmark.single_core else 0,
+            tab_label={"GB6": "GB6 MULTI", "GB7": "GB7 MULTI",
+                       "SPEC2026_INT": "SPEC26 INT", "SPEC2026_FP": "SPEC26 FP"}[name],
+        )
+        for name, benchmark in CPU_BENCHMARKS.items()
+    },
     "GPU": DatasetDefinition(
         key="GPU",
         title="Mobile GPU performance",
         kicker="3DMark Steel Nomad Light",
+        score_column="GPU_Score", score_label="Steel Nomad Light score",
         id_column="GPU",
         required=frozenset({"GPU", "Board_Power_W", "GPU_Score"}),
         numeric=("Board_Power_W", "GPU_Score", "Efficiency"),
@@ -210,6 +228,7 @@ DATASET_DEFINITIONS = {
         key="Laptop GPU",
         title="Laptop GPU performance",
         kicker="3DMark Time Spy Graphics",
+        score_column="GPU_Score", score_label="Time Spy graphics score",
         id_column="GPU",
         required=frozenset({"GPU", "Board_Power_W", "GPU_Score"}),
         numeric=("Board_Power_W", "GPU_Score", "Efficiency"),
@@ -228,13 +247,16 @@ DATASET_DEFINITIONS = {
     ),
 }
 
-CURVE_DATASETS = frozenset({"CPU", "GPU", "Laptop GPU"})
+CPU_DATASETS = frozenset(benchmark.dataset_key for benchmark in CPU_BENCHMARKS.values())
+CURVE_DATASETS = CPU_DATASETS | {"GPU", "Laptop GPU"}
 
 
 def classify_columns(columns: Iterable[str]) -> str | None:
     """Return the recognized dataset kind for a CSV schema."""
     column_set = frozenset(columns)
-    for key in ("CPU", "GPU", "Battery"):
+    if sum(benchmark.score_column in column_set for benchmark in CPU_BENCHMARKS.values()) > 1:
+        raise ValueError("CPU benchmarks must be stored in separate CSVs.")
+    for key in (*[b.dataset_key for b in CPU_BENCHMARKS.values()], "GPU", "Battery"):
         definition = DATASET_DEFINITIONS[key]
         if definition.required.issubset(column_set):
             return key
@@ -301,7 +323,7 @@ def _prepare_frame(
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
     if kind in CURVE_DATASETS:
-        score_column = "GB6_Multi_Score" if kind == "CPU" else "GPU_Score"
+        score_column = definition.score_column
         if "Efficiency" not in frame:
             frame["Efficiency"] = frame[score_column] / frame["Board_Power_W"]
         else:
@@ -315,6 +337,21 @@ def _prepare_frame(
             & frame[score_column].notna()
         ]
         frame["__label"] = frame[definition.id_column].astype(str).str.strip()
+        if kind in CPU_DATASETS:
+            benchmark_name, benchmark = next((name, item) for name, item in CPU_BENCHMARKS.items()
+                                             if item.dataset_key == kind)
+            if "Benchmark" in frame and not frame["Benchmark"].dropna().eq(benchmark_name).all():
+                raise ValueError("Benchmark metadata does not match the score column.")
+            if benchmark.single_core:
+                for column in CORE_COLUMNS:
+                    if column not in frame:
+                        frame[column] = ""
+                    frame[column] = frame[column].fillna("").astype(str).str.strip()
+                if frame["Core"].eq("").any() or frame["Core_Group"].eq("").any():
+                    raise ValueError("SPEC profiles require both Core and Core_Group.")
+                frame["__label"] = [cpu_profile_label(*values) for values in
+                                     frame[["CPU", *CORE_COLUMNS]].itertuples(index=False, name=None)]
+
     else:
         if "hours" not in frame:
             frame["hours"] = frame["minutes"] / 60.0
@@ -356,10 +393,10 @@ def load_collections(
         except Exception as exc:
             warnings.append(f"{path.name}: {exc}")
             continue
-        kind = classify_frame(frame, path)
-        if kind is None:
-            continue
         try:
+            kind = classify_frame(frame, path)
+            if kind is None:
+                continue
             grouped[kind].append(_prepare_frame(frame, kind, path, root))
         except Exception as exc:
             warnings.append(f"{path.name}: {exc}")
@@ -448,6 +485,7 @@ class ComparisonDashboard:
         style.map("TButton", background=[("active", "#22304e")])
         style.configure(
             "Compact.TButton",
+            width=6,
             padding=(6, 8),
             background=PANEL_2,
             foreground=TEXT,
@@ -542,14 +580,14 @@ class ComparisonDashboard:
         nav_row.pack(fill=tk.X, pady=(0, 14))
         nav = tk.Frame(nav_row, bg=PANEL, padx=4, pady=4)
         nav.pack(side=tk.LEFT)
-        for key in DATASET_DEFINITIONS:
+        for index, (key, definition) in enumerate(DATASET_DEFINITIONS.items()):
             button = ttk.Button(
                 nav,
-                text=key.upper(),
+                text=definition.tab_label or key.upper(),
                 style="Nav.TButton",
                 command=lambda chosen=key: self.set_dataset(chosen),
             )
-            button.pack(side=tk.LEFT)
+            button.grid(row=index // 4, column=index % 4, sticky="ew", padx=1, pady=1)
             self.nav_buttons[key] = button
         self.source_note = tk.Label(
             nav_row,
@@ -644,13 +682,17 @@ class ComparisonDashboard:
             relief=tk.FLAT,
         )
         scrollbar = ttk.Scrollbar(list_shell, command=self.profile_list.yview)
-        self.profile_list.configure(yscrollcommand=scrollbar.set)
-        self.profile_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0), pady=8)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        horizontal = ttk.Scrollbar(list_shell, orient=tk.HORIZONTAL, command=self.profile_list.xview)
+        self.profile_list.configure(yscrollcommand=scrollbar.set, xscrollcommand=horizontal.set)
+        list_shell.rowconfigure(0, weight=1)
+        list_shell.columnconfigure(0, weight=1)
+        self.profile_list.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=8)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        horizontal.grid(row=1, column=0, sticky="ew")
         self.profile_list.bind("<<ListboxSelect>>", self.on_profile_select)
 
         quick = tk.Frame(sidebar, bg=PANEL)
-        quick.pack(fill=tk.X, pady=(12, 0))
+        quick.pack(fill=tk.X, pady=(0, 8), before=list_shell)
         ttk.Button(
             quick,
             text="Top 5",
@@ -684,14 +726,15 @@ class ComparisonDashboard:
             wraplength=245,
             justify=tk.LEFT,
         )
-        self.selection_note.pack(anchor="w", pady=(13, 0))
+        self.selection_note.pack(anchor="w", pady=(0, 8), before=list_shell)
 
         chart_panel = tk.Frame(body, bg=PANEL, padx=12, pady=12)
         chart_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         self.figure = Figure(figsize=(11.5, 6.2), dpi=100, facecolor=PANEL)
         grid = self.figure.add_gridspec(
-            1, 2, width_ratios=(2.15, 1), left=0.07, right=0.97, top=0.91, bottom=0.12, wspace=0.23
+            1, 2, width_ratios=(2.15, 1), left=0.09, right=0.96, top=0.86, bottom=0.16, wspace=0.6
         )
+        self.chart_grid = grid
         self.main_axis = self.figure.add_subplot(grid[0, 0])
         self.rank_axis = self.figure.add_subplot(grid[0, 1])
         self.canvas = FigureCanvasTkAgg(self.figure, master=chart_panel)
@@ -700,9 +743,10 @@ class ComparisonDashboard:
         self.canvas.mpl_connect("pick_event", self.on_chart_pick)
         self.canvas.mpl_connect("scroll_event", self.on_ranking_scroll)
         self.canvas.mpl_connect("motion_notify_event", self.on_chart_motion)
+        self.canvas.mpl_connect("resize_event", self._on_chart_resize)
 
         toolbar_frame = tk.Frame(chart_panel, bg=PANEL)
-        toolbar_frame.pack(fill=tk.X)
+        toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X, before=self.canvas.get_tk_widget())
         self.toolbar = NavigationToolbar2Tk(self.canvas, toolbar_frame, pack_toolbar=False)
         self.toolbar.configure(background=PANEL)
         for child in self.toolbar.winfo_children():
@@ -788,7 +832,7 @@ class ComparisonDashboard:
     def _ranked_labels(self, key: str) -> list[str]:
         frame = self.collections[key]
         if key in CURVE_DATASETS:
-            metric = "Efficiency" if key == "CPU" else "GPU_Score"
+            metric = "Efficiency" if key in CPU_DATASETS else DATASET_DEFINITIONS[key].score_column
             ranking = (
                 frame.groupby("__label", sort=False)[metric]
                 .max()
@@ -872,6 +916,12 @@ class ComparisonDashboard:
         axis.xaxis.set_major_locator(MaxNLocator(nbins=7))
         axis.yaxis.set_major_locator(MaxNLocator(nbins=7))
 
+    def _on_chart_resize(self, event) -> None:
+        # Reserve pixels for titles and units, even when the window is short.
+        height = max(event.height, 200)
+        self.chart_grid.update(top=1 - 58 / height, bottom=72 / height)
+        self.canvas.draw_idle()
+
     def draw_charts(self) -> None:
         if self.dataset_key not in self.collections:
             return
@@ -920,20 +970,20 @@ class ComparisonDashboard:
         self.ranking_values = pd.Series(dtype=float)
         self.ranking_offset = 0
         commands = {
-            "CPU": (
-                "cpu_curves.csv",
-                'python "Performance Benchmark\\cpu_curve_parser.py"',
-            ),
+            **{benchmark.dataset_key: (
+                "snapshots/" + benchmark.filename,
+                f'python "Performance Benchmark\\cpu_curve_parser.py" --benchmark {name}',
+            ) for name, benchmark in CPU_BENCHMARKS.items()},
             "GPU": (
-                "gpu_curves.csv",
+                "snapshots/gpu_snl_curves.csv",
                 'python "Performance Benchmark\\gpu_curve_parser.py"',
             ),
             "Laptop GPU": (
-                "laptop_gpu_curves.csv",
+                "snapshots/laptop_gpu_curves.csv",
                 'python "Performance Benchmark\\laptop_gpu_curve_parser.py"',
             ),
             "Battery": (
-                "results.csv",
+                "snapshots/battery_results.csv",
                 "python Battery\\battery_parser.py",
             ),
         }
@@ -998,12 +1048,10 @@ class ComparisonDashboard:
     def _draw_curve_charts(self, frame: pd.DataFrame) -> None:
         kind = self.dataset_key
         view = self.view_var.get()
-        score_column = "GB6_Multi_Score" if kind == "CPU" else "GPU_Score"
-        score_label = {
-            "CPU": "Geekbench 6 multi score",
-            "GPU": "Steel Nomad Light score",
-            "Laptop GPU": "Time Spy graphics score",
-        }[kind]
+        definition = DATASET_DEFINITIONS[kind]
+        score_column = definition.score_column
+        score_label = definition.score_label
+        decimals = definition.score_decimals
         if view == "Performance curve":
             x_column, y_column = "Board_Power_W", score_column
             x_label, y_label = "Board power (W)", score_label
@@ -1079,9 +1127,9 @@ class ComparisonDashboard:
                             label=label,
                             details=(
                                 f"{label}\n"
-                                f"{score_label}: {float(row[score_column]):,.0f}\n"
+                                f"{score_label}: {float(row[score_column]):,.{decimals}f}\n"
                                 f"Board power: {float(row['Board_Power_W']):.2f} W\n"
-                                f"Efficiency: {float(row['Efficiency']):,.0f} score/W"
+                                f"Efficiency: {float(row['Efficiency']):,.{decimals}f} score/W"
                             ),
                             color=color,
                         )
@@ -1318,10 +1366,10 @@ class ComparisonDashboard:
             range_note += " · scroll to browse"
         self._style_axis(
             self.rank_axis,
-            "Selected ranking",
+            "Ranking",
             f"{direction} · {range_note}",
         )
-        short_labels = [self._short_label(label, 22) for label in values.index]
+        short_labels = [self._ranking_label(label) for label in values.index]
         selected_labels = sorted(
             self.selected.get(self.dataset_key, set()),
             key=str.casefold,
@@ -1349,7 +1397,8 @@ class ComparisonDashboard:
             self.rank_axis.text(
                 value + span * 0.025,
                 bar.get_y() + bar.get_height() / 2,
-                self._format_number(float(value)),
+                (f"{float(value):.3f}" if DATASET_DEFINITIONS[self.dataset_key].score_decimals
+                 else self._format_number(float(value))),
                 va="center",
                 color=TEXT,
                 fontsize=8,
@@ -1411,13 +1460,8 @@ class ComparisonDashboard:
         if frame.empty:
             leader = "—"
         elif self.dataset_key in CURVE_DATASETS:
-            metric = (
-                "GB6_Multi_Score"
-                if self.view_var.get() == "Performance curve" and self.dataset_key == "CPU"
-                else "GPU_Score"
-                if self.view_var.get() == "Performance curve"
-                else "Efficiency"
-            )
+            metric = (DATASET_DEFINITIONS[self.dataset_key].score_column
+                      if self.view_var.get() == "Performance curve" else "Efficiency")
             leader = frame.groupby("__label")[metric].max().idxmax()
         else:
             metric = {
@@ -1427,7 +1471,9 @@ class ComparisonDashboard:
             }[self.view_var.get()]
             grouped = frame.groupby("__label")[metric].mean()
             leader = grouped.idxmin() if metric == "avgPowerW" else grouped.idxmax()
-        self.stat_values["leader"].configure(text=self._short_label(str(leader), 25))
+        leader_text = (self._ranking_label(str(leader)) if self.dataset_key in {"SPEC INT", "SPEC FP"}
+                       else self._short_label(str(leader), 25))
+        self.stat_values["leader"].configure(text=leader_text)
 
         source_count = all_frame["__source"].nunique()
         warning_note = f" · {len(self.load_warnings)} warning(s)" if self.load_warnings else ""
@@ -1596,6 +1642,12 @@ class ComparisonDashboard:
             self.chart_note.configure(text=f"Exported {Path(path).name}")
         except Exception as exc:
             messagebox.showerror("Export failed", str(exc), parent=self.root)
+
+    def _ranking_label(self, label: str) -> str:
+        if self.dataset_key in {"SPEC INT", "SPEC FP"} and " — " in label:
+            chip, core = label.split(" — ", 1)
+            return self._short_label(chip, 18) + "\n" + self._short_label(core, 20)
+        return self._short_label(label, 22)
 
     @staticmethod
     def _short_label(label: str, length: int) -> str:

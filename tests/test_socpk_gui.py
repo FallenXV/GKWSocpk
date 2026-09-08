@@ -2,19 +2,96 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import Mock
 from pathlib import Path
 
 import pandas as pd
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from cpu_benchmarks import CPU_BENCHMARKS
 
 from socpk_gui import (
     add_geekerwan_capacity_overlay,
     classify_columns,
     collection_summary,
     load_collections,
+    ComparisonDashboard,
+    DATASET_DEFINITIONS,
 )
 
 
 class DashboardDataTests(unittest.TestCase):
+    def test_new_cpu_schemas_keep_benchmarks_and_core_groups_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, benchmark in CPU_BENCHMARKS.items():
+                frame = pd.DataFrame({"CPU": ["Chip", "Chip"], "Board_Power_W": [1., 1.],
+                                      benchmark.score_column: [1.23456, 2.34567], "Benchmark": name})
+                if benchmark.single_core:
+                    frame["Core"] = "Unknown"
+                    frame["Core_Group"] = ["large", "small"]
+                frame.to_csv(root / benchmark.filename, index=False)
+            collections, warnings = load_collections(root)
+            self.assertEqual(warnings, [])
+            self.assertEqual(set(collections), {b.dataset_key for b in CPU_BENCHMARKS.values()})
+            for kind in ("SPEC INT", "SPEC FP"):
+                frame = collections[kind]
+                self.assertEqual(frame["__label"].tolist(), ["Chip — Unknown · large", "Chip — Unknown · small"])
+                self.assertAlmostEqual(frame["Efficiency"].iloc[0], 1.23456)
+
+    def test_rejects_mixed_cpu_scores_and_mislabeled_benchmarks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pd.DataFrame({"CPU": ["Chip"], "Board_Power_W": [1], "GB6_Multi_Score": [6000],
+                          "GB7_Multi_Score": [7000]}).to_csv(root / "mixed.csv", index=False)
+            pd.DataFrame({"CPU": ["Chip"], "Board_Power_W": [1], "GB6_Multi_Score": [6000],
+                          "Benchmark": ["GB7"]}).to_csv(root / "wrong.csv", index=False)
+            collections, warnings = load_collections(root)
+            self.assertEqual(collections, {})
+            self.assertEqual(len(warnings), 2)
+
+    def test_new_benchmark_chart_views_rank_and_export_with_correct_scores(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("GB7", "SPEC2026_INT", "SPEC2026_FP"):
+                benchmark = CPU_BENCHMARKS[name]
+                frame = pd.DataFrame({"CPU": ["Chip"] * 4, "Board_Power_W": [.5, 1., .5, 1.],
+                                      benchmark.score_column: [1.23456, 2.34567, 2., 3.]})
+                if benchmark.single_core:
+                    frame["Core"] = "Unknown"
+                    frame["Core_Group"] = ["large", "large", "small", "small"]
+                target = root / benchmark.filename
+                frame.to_csv(target, index=False)
+                collections, warnings = load_collections(root, [target])
+                self.assertEqual(warnings, [])
+                kind = benchmark.dataset_key
+                frame = collections[kind]
+                dashboard = ComparisonDashboard.__new__(ComparisonDashboard)
+                dashboard.dataset_key = kind
+                dashboard.collections = collections
+                dashboard.selected = {kind: set(frame["__label"])}
+                dashboard.figure = Figure(figsize=(12, 6))
+                FigureCanvasAgg(dashboard.figure)
+                dashboard.main_axis, dashboard.rank_axis = dashboard.figure.subplots(1, 2)
+                dashboard.ranking_page_size = 9
+                dashboard.chart_note = Mock()
+                dashboard.source_note = Mock()
+                dashboard.stat_values = {key: Mock() for key in ("profiles", "points", "leader")}
+                dashboard.load_warnings = []
+                dashboard.view_var = Mock()
+                for view in DATASET_DEFINITIONS[kind].views:
+                    dashboard.view_var.get.return_value = view
+                    dashboard.hover_points, dashboard.line_artists = [], []
+                    dashboard._draw_curve_charts(frame)
+                    dashboard._update_stats(frame)
+                    metric = benchmark.score_column if view == "Performance curve" else "Efficiency"
+                    expected = frame.groupby("__label")[metric].max().sort_values(ascending=False)
+                    pd.testing.assert_series_equal(dashboard.ranking_values, expected)
+                    if benchmark.single_core:
+                        self.assertIn("1.235", dashboard.hover_points[0].details)
+                        self.assertIn("Unknown", dashboard._ranking_label(next(iter(dashboard.selected[kind]))))
+                    dashboard.figure.savefig(root / f"{name}-{view}.png")
+
     def test_adds_geekerwan_capacity_overlay_without_replacing_source_data(self) -> None:
         source = pd.DataFrame(
             {
