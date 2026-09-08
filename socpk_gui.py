@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -24,11 +26,12 @@ matplotlib.rcParams["font.sans-serif"] = [
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, font as tkfont
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
+from matplotlib.offsetbox import AnchoredOffsetbox, HPacker, TextArea
 from matplotlib.ticker import MaxNLocator
 
 
@@ -59,6 +62,32 @@ PALETTE = (
     "#84dcc6",
     "#a9def9",
 )
+
+
+class AxisHeader(AnchoredOffsetbox):
+    """Keep title and note on one baseline, including resized and exported charts."""
+
+    def __init__(self, axis, title: str, note: str):
+        self.title = TextArea(title, textprops=dict(color=TEXT, fontsize=11, fontweight="bold"))
+        self.note = TextArea(note, textprops=dict(color=MUTED, fontsize=9))
+        self.row = HPacker(children=[self.title, self.note], align="baseline", pad=0, sep=10)
+        super().__init__("lower left", child=self.row, frameon=False, pad=0, borderpad=0,
+                         bbox_to_anchor=(0, 1.02), bbox_transform=axis.transAxes)
+
+    def get_bbox(self, renderer):
+        # Measure with the active renderer so PNG, SVG and PDF fit just like the GUI.
+        for area, size in ((self.title, 11), (self.note, 9)):
+            area.get_children()[0].set_fontsize(size)
+        gap = renderer.points_to_pixels(self.row.sep)
+        for _ in range(4):
+            width = self.title.get_bbox(renderer).width + self.note.get_bbox(renderer).width
+            if width + gap <= self.axes.bbox.width:
+                break
+            scale = max(1, self.axes.bbox.width - gap) / max(width, 1) * 0.98
+            for area in (self.title, self.note):
+                text = area.get_children()[0]
+                text.set_fontsize(text.get_fontsize() * scale)
+        return super().get_bbox(renderer)
 
 
 @dataclass(frozen=True)
@@ -594,9 +623,9 @@ class ComparisonDashboard:
 
         self.hero = tk.Frame(shell, bg=APP_BG)
         self.hero.pack(fill=tk.X, pady=(0, 8))
-        hero_text = tk.Frame(self.hero, bg=APP_BG)
+        hero_text = self.hero_text = tk.Frame(self.hero, bg=APP_BG)
         self.hero.columnconfigure(0, weight=1)
-        self.hero.columnconfigure(1, weight=2)
+        self.hero.columnconfigure(1, weight=0)
         hero_text.grid(row=0, column=0, sticky="w", padx=(0, 12))
         self.kicker_label = tk.Label(
             hero_text,
@@ -618,7 +647,7 @@ class ComparisonDashboard:
         self.title_label.pack(anchor="w", pady=(2, 0))
 
         self.stats_frame = tk.Frame(self.hero, bg=APP_BG)
-        self.stats_frame.grid(row=0, column=1, sticky="ew")
+        self.stats_frame.grid(row=0, column=1, sticky="e")
         self.stat_values: dict[str, tk.Label] = {}
         for key, label, color in (
             ("profiles", "PROFILES", ACCENT),
@@ -626,6 +655,7 @@ class ComparisonDashboard:
             ("leader", "CURRENT LEADER", GREEN),
         ):
             self._make_stat_card(self.stats_frame, key, label, color)
+        self.hero.bind("<Configure>", self._resize_leader)
 
         body = tk.Frame(shell, bg=APP_BG)
         body.pack(fill=tk.BOTH, expand=True)
@@ -770,8 +800,7 @@ class ComparisonDashboard:
     def _make_stat_card(self, parent: tk.Frame, key: str, label: str, color: str) -> None:
         card = tk.Frame(parent, bg=PANEL, padx=16, pady=11, highlightthickness=1, highlightbackground=GRID)
         column = len(self.stat_values)
-        parent.columnconfigure(column, weight=1 if key == "leader" else 0,
-                               minsize=350 if key == "leader" else 0)
+        parent.columnconfigure(column, weight=1 if key == "leader" else 0)
         card.grid(row=0, column=column, sticky="nsew", padx=(9, 0))
         tk.Frame(card, bg=color, width=3, height=38).pack(side=tk.LEFT, padx=(0, 11))
         content = tk.Frame(card, bg=PANEL)
@@ -793,9 +822,22 @@ class ComparisonDashboard:
         value.configure(anchor="w", justify=tk.LEFT)
         value.pack(anchor="w", fill=tk.X)
         if key == "leader":
-            value.configure(wraplength=340)
-            card.bind("<Configure>", lambda event: value.configure(wraplength=max(220, event.width - 64)))
+            self.leader_font = tkfont.Font(family="Segoe UI Semibold", size=13)
+            value.configure(width=1, wraplength=0, font=self.leader_font)
         self.stat_values[key] = value
+
+    def _resize_leader(self, _event=None) -> None:
+        value = self.stat_values["leader"]
+        self.leader_font.configure(size=13)
+        other_cards = sum(card.winfo_reqwidth() + 9 for card in self.stats_frame.winfo_children()[:2])
+        available = max(140, self.hero.winfo_width() - self.hero_text.winfo_reqwidth() - other_cards - 21)
+        desired = self.leader_font.measure(value.cget("text")) + 64
+        width = min(desired, available)
+        self.stats_frame.columnconfigure(2, minsize=int(width) + 9)
+        for size in range(13, 7, -1):
+            self.leader_font.configure(size=size)
+            if self.leader_font.measure(value.cget("text")) <= width - 64:
+                break
 
     def reload_data(self, initial_dataset: str | None = None) -> None:
         collections, warnings = load_collections(self.project_root, self.csv_paths)
@@ -982,17 +1024,7 @@ class ComparisonDashboard:
     def _style_axis(self, axis, title: str, subtitle: str = "") -> None:
         axis.clear()
         axis.set_facecolor(PLOT_BG)
-        axis.set_title(title, loc="left", color=TEXT, fontsize=14, fontweight="bold", pad=14)
-        if subtitle:
-            axis.text(
-                0,
-                1.015,
-                subtitle,
-                transform=axis.transAxes,
-                color=MUTED,
-                fontsize=9,
-                va="bottom",
-            )
+        axis.add_artist(AxisHeader(axis, title, subtitle))
         axis.tick_params(colors=MUTED, labelsize=9, length=0, pad=4)
         for spine in axis.spines.values():
             spine.set_visible(False)
@@ -1006,7 +1038,7 @@ class ComparisonDashboard:
     def _on_chart_resize(self, event) -> None:
         # Reserve pixels for titles and units, even when the window is short.
         height = max(event.height, 200)
-        self.chart_grid.update(top=1 - 46 / height, bottom=54 / height)
+        self.chart_grid.update(top=1 - 32 / height, bottom=54 / height)
         self.canvas.draw_idle()
 
     def draw_charts(self) -> None:
@@ -1127,6 +1159,7 @@ class ComparisonDashboard:
         self.stat_values["profiles"].configure(text="0 / 0")
         self.stat_values["points"].configure(text="0")
         self.stat_values["leader"].configure(text="—")
+        self._resize_leader()
         self.selection_note.configure(text="0 selected · 0 shown · 0 available")
         self.source_note.configure(text="No matching CSV found")
         self.chart_note.configure(text=f"Waiting for {filename}")
@@ -1142,23 +1175,20 @@ class ComparisonDashboard:
         if view == "Performance curve":
             x_column, y_column = "Board_Power_W", score_column
             x_label, y_label = "Board power (W)", score_label
-            chart_title = "Performance scaling"
             rank_column, rank_label = score_column, "Peak score"
         elif view == "Efficiency vs score":
             x_column, y_column = score_column, "Efficiency"
             x_label, y_label = score_label, "Score per watt"
-            chart_title = "Efficiency across performance"
             rank_column, rank_label = "Efficiency", "Peak score/W"
         else:
             x_column, y_column = "Board_Power_W", "Efficiency"
             x_label, y_label = "Board power (W)", "Score per watt"
-            chart_title = "Efficiency curve"
             rank_column, rank_label = "Efficiency", "Peak score/W"
 
         self._style_axis(
             self.main_axis,
-            chart_title,
-            f"{frame['__label'].nunique()} profiles · move near a point to inspect",
+            definition.kicker.replace("-", " ").upper() + " CURVE",
+            f"{frame['__label'].nunique()} profiles",
         )
         self.main_axis.set_xlabel(x_label, labelpad=6)
         self.main_axis.set_ylabel(y_label, labelpad=6)
@@ -1451,14 +1481,10 @@ class ComparisonDashboard:
         values = visible.iloc[::-1]
 
         higher_is_better = self.ranking_higher_is_better
-        direction = "higher is better" if higher_is_better else "lower is better"
-        range_note = f"{start + 1}–{end} of {total}"
-        if total > page_size:
-            range_note += " · scroll to browse"
         self._style_axis(
             self.rank_axis,
             "Ranking",
-            f"{direction} · {range_note}",
+            f"{'↑' if higher_is_better else '↓'} better · {start + 1}–{end}/{total}",
         )
         label_width = max(16, int(self.rank_axis.get_window_extent().width / 5.5))
         short_labels = [self._short_label(self._legend_label(label), label_width) for label in values.index]
@@ -1565,6 +1591,8 @@ class ComparisonDashboard:
             leader = grouped.idxmin() if metric == "avgPowerW" else grouped.idxmax()
         leader_text = self._leader_label(str(leader), frame)
         self.stat_values["leader"].configure(text=leader_text)
+        if hasattr(self, "hero"):
+            self._resize_leader()
 
         source_count = all_frame["__source"].nunique()
         warning_note = f" · {len(self.load_warnings)} warning(s)" if self.load_warnings else ""
@@ -1718,8 +1746,30 @@ class ComparisonDashboard:
         if label:
             self.chart_note.configure(text=f"Selected chart profile: {label}")
 
+    def _export_filename(self) -> str:
+        definition = DATASET_DEFINITIONS[self.dataset_key]
+        mode = self.selection_modes.get(self.dataset_key, "manual")
+        parts = ["socpk", definition.kicker, self.view_var.get(), mode]
+        if self.dataset_key in {"SPEC INT", "SPEC FP"}:
+            filters = self.core_filters.get(self.dataset_key, CoreFilter())
+            parts.append("groups-" + "-".join(sorted(filters.groups)) if filters.groups else "all-groups")
+            parts.append("cores-" + "-".join(sorted(filters.names)) if filters.names else "all-cores")
+        search = self.search_var.get().strip()
+        if search:
+            parts.append("search-" + search)
+        if mode == "manual":
+            labels = sorted(self.selected.get(self.dataset_key, set()))
+            signature = hashlib.sha256("\n".join(labels).encode()).hexdigest()[:8]
+            parts.append(f"{len(labels)}-profiles-{signature}")
+        stem = "-".join(re.sub(r"[^\w]+", "-", part.casefold()).strip("-") for part in parts)
+        # Many selected cores can exceed a filesystem's filename limit.
+        if len(stem.encode("utf-8")) > 180:
+            suffix = hashlib.sha256(stem.encode()).hexdigest()[:10]
+            stem = stem.encode()[:168].decode("utf-8", errors="ignore").rstrip("-") + "-" + suffix
+        return stem + ".png"
+
     def export_chart(self) -> None:
-        default_name = f"socpk-{self.dataset_key.lower()}-comparison.png"
+        default_name = self._export_filename()
         path = filedialog.asksaveasfilename(
             parent=self.root,
             title="Export comparison chart",
@@ -1745,7 +1795,7 @@ class ComparisonDashboard:
         variant = row.get("Core_Variant", "")
         if pd.notna(variant) and variant:
             parts.append({"p": "P-core", "e": "E-core"}.get(str(variant), str(variant)))
-        return f"{row['CPU']}\n" + " · ".join(parts)
+        return f"{row['CPU']} — " + " · ".join(parts)
 
     def _legend_label(self, label: str) -> str:
         if self.dataset_key in {"SPEC INT", "SPEC FP"} and " — " in label:

@@ -18,6 +18,7 @@ from socpk_gui import (
     ComparisonDashboard,
     DATASET_DEFINITIONS,
     CoreFilter,
+    AxisHeader,
 )
 
 
@@ -27,8 +28,57 @@ class DashboardDataTests(unittest.TestCase):
         frame = pd.DataFrame({"__label": [label], "CPU": ["Snapdragon 8 Elite Gen 5"],
                               "Core": ["Oryon V3 M"], "Core_Group": ["medium"], "Core_Variant": ["e"]})
         self.assertEqual(ComparisonDashboard._leader_label(label, frame),
-                         "Snapdragon 8 Elite Gen 5\nOryon V3 M · Medium · E-core")
+                         "Snapdragon 8 Elite Gen 5 — Oryon V3 M · Medium · E-core")
         self.assertEqual(ComparisonDashboard._leader_label(label, frame.iloc[:0]), label)
+
+    def test_export_names_describe_filters_and_distinguish_manual_selections(self):
+        dashboard = ComparisonDashboard.__new__(ComparisonDashboard)
+        dashboard.dataset_key = "SPEC INT"
+        dashboard.view_var = Mock(get=Mock(return_value="Efficiency curve"))
+        dashboard.search_var = Mock(get=Mock(return_value="A19 / Pro:*?"))
+        dashboard.selection_modes = {"SPEC INT": "top5"}
+        dashboard.core_filters = {"SPEC INT": CoreFilter(frozenset({"super", "medium"}),
+                                                        frozenset({"Everest (V4)", "Sawtooth (V4)"}))}
+        filtered = dashboard._export_filename()
+        self.assertIn("spec-cpu-2026-integer-single-core-efficiency-curve-top5", filtered)
+        self.assertIn("groups-medium-super-cores-everest-v4-sawtooth-v4", filtered)
+        self.assertIn("search-a19-pro", filtered)
+        self.assertFalse(set('/\\:*?"<>|') & set(filtered))
+        dashboard.core_filters = {}
+        self.assertNotEqual(filtered, dashboard._export_filename())
+        dashboard.selection_modes["SPEC INT"] = "manual"
+        dashboard.selected = {"SPEC INT": {"Chip A", "Chip B"}}
+        manual = dashboard._export_filename()
+        dashboard.selected["SPEC INT"] = {"Chip A", "Chip C"}
+        self.assertNotEqual(manual, dashboard._export_filename())
+        dashboard.core_filters = {"SPEC INT": CoreFilter(names=frozenset({"Very long core name " * 40}))}
+        long_name = dashboard._export_filename()
+        self.assertLessEqual(len(long_name.encode()), 184)
+        dashboard.core_filters = {"SPEC INT": CoreFilter(names=frozenset({"Very long core name " * 41}))}
+        self.assertNotEqual(long_name, dashboard._export_filename())
+        dashboard.dataset_key = "SPEC FP"
+        self.assertIn("floating-point", dashboard._export_filename())
+
+    def test_chart_headers_fit_one_row_at_screen_and_export_sizes(self):
+        figure = Figure(figsize=(7, 4))
+        canvas = FigureCanvasAgg(figure)
+        axis = figure.add_subplot()
+        header = AxisHeader(axis, "SPEC CPU 2026 FLOATING POINT SINGLE CORE CURVE", "33 profiles")
+        axis.add_artist(header)
+        for width, dpi in ((7, 100), (4.5, 100), (7, 180)):
+            figure.set_size_inches(width, 4)
+            figure.set_dpi(dpi)
+            canvas.draw()
+            renderer = canvas.get_renderer()
+            title_box = header.title.get_window_extent(renderer)
+            note_box = header.note.get_window_extent(renderer)
+            self.assertLess(title_box.x1, note_box.x0)
+            self.assertLessEqual(note_box.x1, axis.bbox.x1 + 1)
+            self.assertGreater(title_box.y0, axis.bbox.y1)
+            self.assertGreater(note_box.y0, axis.bbox.y1)
+        with tempfile.TemporaryDirectory() as directory:
+            for extension in ("svg", "pdf", "png"):
+                figure.savefig(Path(directory) / f"header.{extension}", bbox_inches="tight")
 
     def test_core_filter_scopes_chart_and_top_five_without_losing_other_selections(self):
         dashboard = ComparisonDashboard.__new__(ComparisonDashboard)
@@ -154,6 +204,8 @@ class DashboardDataTests(unittest.TestCase):
                     dashboard.view_var.get.return_value = view
                     dashboard.hover_points, dashboard.line_artists = [], []
                     dashboard._draw_curve_charts(frame)
+                    header = next(artist for artist in dashboard.main_axis.artists if isinstance(artist, AxisHeader))
+                    self.assertEqual(header.title.get_text(), benchmark.title.replace("-", " ").upper() + " CURVE")
                     dashboard._update_stats(frame)
                     metric = benchmark.score_column if view == "Performance curve" else "Efficiency"
                     expected = frame.groupby("__label")[metric].max().sort_values(ascending=False)

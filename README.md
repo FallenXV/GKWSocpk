@@ -116,7 +116,9 @@ SPEC26 FP, GPU, LAPTOP GPU, and BATTERY. Rankings and comparisons stay within
 the selected tab. Curve tabs chart an efficiency curve, a performance curve,
 or efficiency vs score; battery tabs chart runtime vs capacity, energy
 efficiency, or average power draw. Export the current chart as PNG, SVG, or
-PDF.
+PDF. Chart titles identify the benchmark source, with the profile note beside
+the title. Suggested filenames include the benchmark, view, selection mode,
+and applied core/search filters. Manual selections include a profile signature.
 
 Search by chip or core name, multi-select profiles from the list, and use the
 horizontal scrollbar to read long core labels. Top 5 and All shown stay active
