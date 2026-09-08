@@ -5,14 +5,15 @@
 Battery Life Parser & Efficiency + GSMArena Enrichment
 
 Features
-- Fetch current SoCPK 5.0 data from the site's versioned application bundle
+- Fetch current SoCPK 5.0 data from the public chart API
 - Retain support for legacy SoCPK JS files containing arr=[...]
 - Compute:
     * Avg Power (W) = capacityWh*60 / minutes
     * Minutes per Wh (min/Wh) = minutes / capacityWh
     * Δ vs #1 (%) with negative meaning "less/shorter"
 - CJK/English width-aware table printing
-- CSV output (default: results.csv), optional JSON
+- CSV snapshots (default: snapshots/battery_results.csv), optional JSON
+- Existing CSV and JSON files are never overwritten
 - Brand language mapping (--brand-lang source|en)
 - GSMArena enrichment via manual URL mappings:
     * screen_size_in, resolution_px_w/h, refresh_hz
@@ -37,7 +38,7 @@ import unicodedata
 import sys
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -46,6 +47,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from socpk_client import (  # noqa: E402
     RANKINGS_PAYLOAD_KEY,
     decode_embedded_payload,
+    BATTERY_PAGE_SLUG,
+    fetch_chart_page,
+    battery_rows_from_page,
+    new_snapshot,
 )
 
 # -----------------------------
@@ -53,9 +58,9 @@ from socpk_client import (  # noqa: E402
 # -----------------------------
 DEFAULT_SITE_KEY = "5.0"
 SITE_URLS = {
-    "5.0": ["https://www.socpk.com/batlife/"],
+    "5.0": ["https://www.socpk.com/battery-life-5-0"],
 }
-DEFAULT_CSV = "results.csv"
+DEFAULT_CSV = "snapshots/battery_results.csv"
 
 DEFAULT_SPEC_URLS: Dict[str, str] = {
     # key = slug_key(brand, model)
@@ -174,10 +179,16 @@ def parse_battery_rows(source_text: str) -> List[List]:
 
 
 def fetch_battery_rows(urls: List[str]) -> List[List]:
-    """Fetch battery rows from current SPA pages or legacy direct JS URLs."""
+    """Fetch battery rows from the current API or legacy HTML/JS sources."""
     errors = []
     for url in urls:
         try:
+            parsed = urlparse(url)
+            if (parsed.hostname in {"socpk.com", "www.socpk.com"}
+                    and parsed.path.rstrip("/") in {
+                        "", "/batlife", "/battery-life-5-0", "/api/pages/battery-life-5-0",
+                    }):
+                return battery_rows_from_page(fetch_chart_page(BATTERY_PAGE_SLUG, url))
             text = fetch_text(url)
             candidates = [text]
             if url.endswith("/") or "<html" in text.lower():
@@ -637,8 +648,8 @@ def main():
     ap.add_argument("--site", choices=sorted(SITE_URLS.keys()), default=DEFAULT_SITE_KEY,
                     help="Which SoCPK battery dataset to target (default: 5.0)")
     ap.add_argument("--url", action="append", help="Override SoCPK source URL(s)")
-    ap.add_argument("--csv", help=f"Output CSV path (default: {DEFAULT_CSV})")
-    ap.add_argument("--json", help="Optional JSON output path")
+    ap.add_argument("--csv", help=f"Snapshot CSV path (default: {DEFAULT_CSV}); never overwrites existing files")
+    ap.add_argument("--json", help="Optional JSON snapshot path; never overwrites existing files")
     ap.add_argument("--brand-lang", choices=["source","en"], default="source",
                     help="Brand language for output names: source or en (default=source)")
     # GSMArena mapping inputs
@@ -656,7 +667,7 @@ def main():
                     help="Compute simple Pearson correlations vs efficiency")
     args = ap.parse_args()
 
-    # 1) Fetch current SPA data or a legacy JS source that defines arr=[...]
+    # 1) Fetch current API data or a legacy JS source that defines arr=[...]
     default_urls = SITE_URLS.get(args.site, SITE_URLS[DEFAULT_SITE_KEY])
     urls = args.url if args.url else default_urls
     try:
@@ -757,7 +768,8 @@ def main():
     ] + extra_spec_fields
 
     csv_path = args.csv or DEFAULT_CSV
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+    with new_snapshot(csv_path) as f:
+        csv_path = f.name
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         for r in records:
@@ -766,9 +778,10 @@ def main():
     print(f"Wrote CSV: {csv_path}")
 
     if args.json:
-        with open(args.json, "w", encoding="utf-8") as f:
+        with new_snapshot(args.json) as f:
             json.dump(records, f, ensure_ascii=False, indent=2)
-        print(f"Wrote JSON: {args.json}")
+            json_path = f.name
+        print(f"Wrote JSON: {json_path}")
 
 if __name__ == "__main__":
     main()

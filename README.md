@@ -32,8 +32,36 @@ With the venv active:
 
 ```powershell
 python Battery\battery_parser.py
+python "Performance Benchmark\cpu_curve_parser.py"
+python "Performance Benchmark\gpu_curve_parser.py"
+python "Performance Benchmark\laptop_gpu_curve_parser.py"
 python socpk_gui.py
 ```
+
+The parsers use SoCPK's September 2026 chart API, including its public chart
+tokens and binary point format. No browser or additional dependencies are
+needed. Each poll fetches fresh data and retries once if a token expires or
+the chart changes between requests. Legacy battery JS and explicitly supplied
+SVG base URLs remain supported.
+
+New exports go under `snapshots/` relative to your working directory:
+
+- `cpu_gb6_curves.csv`: Geekbench **6** multi-core only. The new CPU page also
+  includes GB7; those scores are excluded from the existing GB6 schema.
+- `gpu_snl_curves.csv`: phone GPU Steel Nomad Light.
+- `laptop_gpu_curves.csv`: laptop GPU Time Spy.
+- `battery_results.csv`: battery test 5.0 runtime, rated Wh and efficiency.
+
+**Existing files are never overwritten**, including custom `--output`,
+`--csv`, and `--json` paths. If a path exists, the export creates a sibling
+with a UTC timestamp. Sparse results therefore cannot replace historical
+data. Empty curve results produce no file; failed writes remove the incomplete
+snapshot. The scripts print the actual saved path.
+
+Curve exports retain the API's published points, which may include fitted
+curves; they do not interpolate extra points. Names use the site's English
+name when available. Previous CLI abbreviations such as `SD8 Gen3` remain
+accepted when they identify a single current series.
 
 The comparison dashboard automatically finds and merges recognized CPU, GPU,
 and battery CSVs under the project folder. Use the tabs to switch datasets,

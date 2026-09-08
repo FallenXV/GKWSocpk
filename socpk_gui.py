@@ -930,7 +930,7 @@ class ComparisonDashboard:
             ),
             "Laptop GPU": (
                 "laptop_gpu_curves.csv",
-                'python "Performance Benchmark\\gpu_curve_parser.py" --platform laptop',
+                'python "Performance Benchmark\\laptop_gpu_curve_parser.py"',
             ),
             "Battery": (
                 "results.csv",

@@ -1,37 +1,8 @@
-"""
-gpu_curve_parser.py
-===================
+"""Fetch phone Steel Nomad Light GPU curves from SoCPK's public chart API.
 
-This module provides functions and a command-line interface to scrape
-SocPK’s phone Steel Nomad Light efficiency curves.  Each curve is
-published as its own SVG under
-``https://www.socpk.com/assets/curves/gpu-snl/gpu/``.  The parser reads
-the base axes layer to derive the conversion from pixel positions to
-physical board power (W) and GPU performance score, and can process
-continuous and scatter-point Matplotlib SVG curves.
-
-Key features
-------------
-
-* **Current axis geometry.**  The script extracts horizontal and
-  vertical plot bounds from the current base axes layer.
-* **Support for continuous and scatter curves.**  Some GPUs (e.g. Adreno
-  in Snapdragon chips) publish full curves, while others provide a
-  handful of scatter points.  ``parse_gpu_curve`` handles both.
-* **Efficiency calculation.**  The returned DataFrame includes an
-  ``Efficiency`` column equal to ``GPU_Score / Board_Power_W`` (NaN
-  when power is zero).
-* **Command‑line interface.**  Running this file directly allows you
-  to scrape multiple GPUs and save the results to a CSV.
-
-Example
--------
-
-Scrape a few GPUs into a CSV from the command line::
-
-    python gpu_curve_parser.py --gpus "A19 Pro" "SD8 Elite Gen5" --output gpu_curves.csv
-
-Then analyse and plot with the companion ``curve_analysis`` script.
+The API supplies power and scores directly. Explicit ``base_url`` arguments
+still support legacy SVG sources using the axis helpers below. CSV exports
+create separate snapshots and never replace an existing file.
 """
 
 from __future__ import annotations
@@ -39,7 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from urllib.parse import quote, unquote, urljoin, urlparse
+from urllib.parse import quote
 from typing import Iterable, List, Optional, Dict
 
 import pandas as pd  # type: ignore
@@ -52,7 +23,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from socpk_client import (  # noqa: E402
     extract_axis_geometry,
     extract_curve_coordinates,
-    fetch_curve_manifest,
+    GPU_PAGE_SLUG,
+    fetch_curve_series,
+    curve_frame,
+    new_snapshot,
 )
 
 __all__ = [
@@ -70,22 +44,11 @@ GPU_AXIS_URL = (
 )
 GPU_LAYER_BASE_URL = "https://www.socpk.com/assets/curves/gpu-snl/gpu/"
 
-# Fallback list used only when discovery fails
-_FALLBACK_GPU_NAMES: List[str] = [
-    "A16", "A17 Pro", "A18", "A18 Pro", "A19", "A19 Pro",
-    "SD8 Elite Gen5", "SD8 Elite (9600)", "SD8 Elite (8533)", "SD8 Gen5",
-    "SD8 Gen3", "SD8 Gen2", "SD8 Gen1", "SD8+ Gen1", "SD8s Gen3",
-    "SD7+ Gen2", "SD780G", "D9500", "D9400 (10667)", "D9400 (8533)",
-    "D9300+", "D9200+", "D9000", "D8400 MAX", "D8300 Ultra", "D8200",
-    "D8100", "D1200", "K9020", "Tensor G4", "Tensor G3", "E2400",
-    "XRing O1",
-]
-
 ###############################################################################
 # Axis scaling defaults and helpers
 ###############################################################################
 
-# Current SNL axis ranges and fallback geometry.  Runtime refresh updates
+# Legacy SNL axis ranges and fallback geometry.  Runtime refresh updates
 # geometry; the site's outlined tick labels are not machine-readable text.
 X_START: float = 144.0
 X_WIDTH: float = 892.8
@@ -148,84 +111,27 @@ def _to_score(y: float) -> float:
     return (Y_BASE - y) / Y_HEIGHT * SCORE_RANGE
 
 
-def discover_gpu_names(
-    layer_url: str = GPU_PAGE_URL,
-    *,
-    fallback_pages: Optional[List[str]] = None,
-) -> List[str]:
-    """Return GPU names published in the current SoCPK curve manifest."""
-    del fallback_pages  # Retained for API compatibility with older callers.
-    try:
-        return list(_gpu_layer_urls(layer_url))
-    except (requests.RequestException, ValueError):
-        return []
-
-
-def _gpu_layer_urls(page_url: str = GPU_PAGE_URL) -> Dict[str, str]:
-    """Return current curve names mapped to absolute SVG URLs."""
-    manifest = fetch_curve_manifest(page_url)
-    config = manifest.get("gpuSnl")
-    if not isinstance(config, dict):
-        raise ValueError("SoCPK manifest contains no gpuSnl configuration.")
-
-    result = {}
-    for layer in config.get("layers", []):
-        src = layer.get("src") if isinstance(layer, dict) else None
-        if not isinstance(src, str):
-            continue
-        filename = unquote(urlparse(src).path.rsplit("/", 1)[-1])
-        if not filename.startswith("3dmark_snl_") or not filename.endswith(".svg"):
-            continue
-        name = filename[len("3dmark_snl_"):-len(".svg")]
-        result[name] = urljoin(page_url, src)
-    return result
-
-
-def _gpu_curve_url(gpu_name: str) -> str:
-    try:
-        layers = _gpu_layer_urls()
-        by_casefold = {name.casefold(): url for name, url in layers.items()}
-        manifest_url = by_casefold.get(gpu_name.casefold())
-        if manifest_url:
-            return manifest_url
-    except (requests.RequestException, ValueError):
-        pass
-    return f"{GPU_LAYER_BASE_URL}3dmark_snl_{quote(gpu_name, safe='')}.svg"
+def discover_gpu_names() -> List[str]:
+    """Return names currently published in the chart API."""
+    return [item.get("name_en") or item["name"]
+            for item in fetch_curve_series(GPU_PAGE_SLUG)]
 
 
 def parse_gpu_curve(
     gpu_name: str,
     base_url: Optional[str] = None,
 ) -> Optional[pd.DataFrame]:
-    """Download and parse a single GPU efficiency curve.
-
-    Parameters
-    ----------
-    gpu_name : str
-        Human‑readable name of the GPU/SoC.
-    base_url : str, optional
-        Base directory containing the GPU SVG layers.  The default
-        points to SocPK’s canonical location.
-
-    Returns
-    -------
-    pandas.DataFrame or None
-        A DataFrame with columns ``['Board_Power_W', 'GPU_Score',
-        'Efficiency']``.  Returns ``None`` if the SVG cannot be
-        fetched or contains no usable points.
-
-    Notes
-    -----
-    Continuous curves are exported as a ``<path>`` element inside
-    ``<g id="line2d_1">``; scatter curves use multiple ``<use>``
-    elements.  Both formats are handled automatically.
-    """
+    """Fetch one curve; an explicit base URL selects the legacy SVG parser."""
+    if base_url is None:
+        frame = curve_frame(
+            fetch_curve_series(GPU_PAGE_SLUG, [gpu_name]),
+            "GPU", "GPU_Score",
+        )
+        return frame.drop(columns=["GPU"])
     if base_url is not None:
         svg_url = (
             f"{base_url.rstrip('/')}/3dmark_snl_{quote(gpu_name, safe='')}.svg"
         )
-    else:
-        svg_url = _gpu_curve_url(gpu_name)
     try:
         resp = requests.get(svg_url, timeout=10)
     except requests.RequestException:
@@ -246,80 +152,35 @@ def scrape_gpu_curves(
     *,
     default_gpu_names: Optional[List[str]] = None,
 ) -> pd.DataFrame:
-    """Scrape multiple GPU curves into a single DataFrame.
+    """Fetch all selected curves in one poll, preserving the CSV schema.
 
-    Parameters
-    ----------
-    gpu_names : iterable of str, optional
-        Names of GPUs/SoCs to scrape.  If ``None`` (default), the
-        function auto-discovers available GPU curves from SocPK; if
-        that yields no results it uses ``default_gpu_names`` (when
-        provided) or an internal fallback list.
-    default_gpu_names : list of str, optional
-        Optional fallback list used when ``gpu_names`` is ``None`` and
-        discovery fails.
-
-    Returns
-    -------
-    pandas.DataFrame
-        A DataFrame with columns ``['GPU', 'Board_Power_W',
-        'GPU_Score', 'Efficiency']``.  May be empty if no curves were
-        successfully scraped.
+    ``default_gpu_names`` is retained for caller compatibility. Discovery
+    now requires a working API; obsolete asset lists cannot recover failures.
     """
-    # Update axis scaling to adapt to chart changes
-    try:
-        refresh_axis_scaling()
-    except Exception:
-        pass
-    if gpu_names is not None:
-        names = list(gpu_names)
-    else:
-        names = discover_gpu_names()
-        if not names and default_gpu_names is not None:
-            names = default_gpu_names
-        if not names:
-            names = _FALLBACK_GPU_NAMES
-    frames: List[pd.DataFrame] = []
-    for name in names:
-        try:
-            df = parse_gpu_curve(name)
-        except Exception as exc:
-            print(f"Error parsing {name}: {exc}")
-            continue
-        if df is None or df.empty:
-            continue
-        df['GPU'] = name
-        frames.append(df)
-    if not frames:
-        return pd.DataFrame(columns=['GPU', 'Board_Power_W', 'GPU_Score', 'Efficiency'])
-    combined = pd.concat(frames, ignore_index=True)
-    # Ensure efficiency column exists
-    if 'Efficiency' not in combined.columns:
-        combined['Efficiency'] = combined['GPU_Score'] / combined['Board_Power_W'].replace(0, pd.NA)
-    return combined[['GPU', 'Board_Power_W', 'GPU_Score', 'Efficiency']]
+    return curve_frame(
+        fetch_curve_series(GPU_PAGE_SLUG, gpu_names),
+        "GPU", "GPU_Score",
+    )
 
 
 def main() -> None:
-    """Command‑line interface for scraping GPU curves.
-
-    Use ``--gpus`` to specify one or more SoC names to scrape.  If
-    omitted, current phone GPU curve names are discovered.
-    """
-    parser = argparse.ArgumentParser(
-        description="Scrape phone Steel Nomad Light GPU curves from SocPK"
-    )
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--gpus', nargs='*', default=None,
-                        help="Names to scrape (e.g. 'A19 Pro').  "
-                             "If omitted, current curves are discovered.")
-    parser.add_argument('--output', type=str, default="gpu_curves.csv",
-                        help="Output CSV path (default: gpu_curves.csv).")
+                        help="Names to scrape; discovers all if omitted.")
+    parser.add_argument('--output', default="snapshots/gpu_snl_curves.csv",
+                        help="Snapshot CSV path; an existing path gets a timestamped sibling.")
     args = parser.parse_args()
-    df = scrape_gpu_curves(args.gpus)
-    if df.empty:
-        print("No GPU curves scraped.  Check network connectivity or update the processor list.")
+    try:
+        frame = scrape_gpu_curves(args.gpus)
+    except (requests.RequestException, ValueError) as exc:
+        raise SystemExit(f"Could not fetch SoCPK curves: {exc}") from exc
+    if frame.empty:
+        print("No curves scraped; no file written.")
         return
-    df.to_csv(args.output, index=False)
-    print(f"Scraped {len(df)} rows for {df['GPU'].nunique()} GPUs → {args.output}")
+    with new_snapshot(args.output) as output:
+        frame.to_csv(output, index=False)
+        output_path = output.name
+    print(f"Scraped {len(frame)} rows for {frame['GPU'].nunique()} GPUs → {output_path}")
 
 
 if __name__ == '__main__':

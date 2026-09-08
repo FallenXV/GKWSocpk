@@ -1,11 +1,16 @@
-"""Helpers for reading data embedded in the current SoCPK single-page app."""
+"""Read SoCPK's public chart API and explicitly supplied legacy assets."""
 
 from __future__ import annotations
 
 import base64
 import json
+import math
 import re
+import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 from xml.etree import ElementTree
@@ -15,6 +20,234 @@ import requests
 SOCPK_ROOT = "https://www.socpk.com/"
 RANKINGS_PAYLOAD_KEY = "socpk-rankings-2026"
 CURVES_PAYLOAD_KEY = "socpk-curves-2026"
+
+CPU_PAGE_SLUG = "mobile-soc-efficiency-gb7"
+GPU_PAGE_SLUG = "mobile-soc-efficiency-snl"
+LAPTOP_GPU_PAGE_SLUG = "laptop-gpu-efficiency"
+BATTERY_PAGE_SLUG = "battery-life-5-0"
+
+
+def decode_chart_blob(encoded: str) -> float | list:
+    """Decode the public API's chart codec (September 2026).
+
+    Python equivalent of the site's WebAssembly decoder: seeded Mulberry32,
+    unsigned/zigzag varints, delta-coded line coordinates and affine scaling.
+    Values are already in chart units; no SVG axis conversion is needed.
+    """
+    raw = base64.b64decode(encoded, validate=True)
+    if not 6 <= len(raw) <= 262144 or raw[0] not in (1, 2):
+        raise ValueError("Unsupported or invalid SoCPK chart blob.")
+    state = int.from_bytes(raw[1:5], "little") ^ 0x9E3779B9
+    offset = 5
+
+    def random() -> float:
+        nonlocal state
+        state = (state + 0x6D2B79F5) & 0xFFFFFFFF
+        value = ((state ^ (state >> 15)) * (state | 1)) & 0xFFFFFFFF
+        value ^= (value + ((value ^ (value >> 7)) * (value | 61))) & 0xFFFFFFFF
+        return (value ^ (value >> 14)) / 4294967296.0
+
+    def varint() -> int:
+        nonlocal offset
+        value = 0
+        for shift in range(0, 56, 7):
+            if offset >= len(raw):
+                break
+            byte = raw[offset]
+            offset += 1
+            value |= (byte & 127) << shift
+            if not byte & 128:
+                if value > 2**53 - 1:
+                    break
+                return value
+        raise ValueError("Truncated or oversized SoCPK chart varint.")
+
+    def signed() -> int:
+        value = varint()
+        return (value >> 1) ^ -(value & 1)
+
+    y_scale, y_offset = random() * 1.8 + 0.6, (random() * 2 - 1) * 5000
+    x_scale, x_offset = random() * 1.8 + 0.6, (random() * 2 - 1) * 5000
+    count = varint()
+    if count > (65536 if raw[0] == 1 else 131072):
+        raise ValueError("Too many values in SoCPK chart blob.")
+    values = []
+    x = y = 0
+    for _ in range(count):
+        if raw[0] == 1:
+            x_noise, y_noise = (random() * 2 - 1) * 2500, (random() * 2 - 1) * 2500
+            x += signed()
+            y += signed()
+            values.append([
+                (x / 10000 - x_offset - x_noise) / x_scale,
+                (y / 10000 - y_offset - y_noise) / y_scale,
+            ])
+        else:
+            noise = (random() * 2 - 1) * 2500
+            values.append((signed() / 10000 - y_offset - noise) / y_scale)
+    if offset != len(raw):
+        raise ValueError("Unexpected trailing SoCPK chart data.")
+    return values[0] if raw[0] == 2 and len(values) == 1 else values
+
+
+def fetch_chart_page(
+    slug: str, root_url: str = SOCPK_ROOT, timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Fetch metadata and public chart data, refreshing stale tokens once.
+
+    Tokens and data are deliberately not cached between polls. The two GETs
+    follow the site's own client, including its data-version consistency check.
+    """
+    page_url = urljoin(root_url, f"/api/pages/{slug}")
+    with requests.Session() as session:
+        session.headers.update({"User-Agent": "Mozilla/5.0 (SoCPK parser)"})
+        for attempt in range(2):
+            params = {"_": str(time.time_ns() // 1000000)} if attempt else None
+            response = session.get(page_url, params=params, timeout=timeout)
+            response.raise_for_status()
+            page = response.json()
+            if not isinstance(page, dict) or not isinstance(page.get("series"), list):
+                raise ValueError(f"Invalid SoCPK page: {slug}.")
+            if not page.get("dataToken") or not page.get("dataExp"):
+                if all("points" in series for series in page["series"]):
+                    return page
+                raise ValueError(f"Missing SoCPK chart token: {slug}.")
+            if attempt == 0 and page["dataExp"] <= time.time() + 10:
+                continue
+            response = session.get(
+                page_url + "/data", params=params, timeout=timeout,
+                headers={"X-Chart-Token": f"{page['dataExp']}.{page['dataToken']}"},
+            )
+            if response.status_code == 403 and attempt == 0:
+                continue
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, dict) or data.get("v") != 1:
+                raise ValueError("Unsupported SoCPK chart response version.")
+            if page.get("dataVersion") != data.get("dataVersion"):
+                if attempt == 0:
+                    continue
+                raise ValueError(f"SoCPK chart changed during fetch: {slug}.")
+            if not isinstance(data.get("series"), list):
+                raise ValueError("Missing SoCPK chart series.")
+            blobs = {series["id"]: series["p"] for series in data["series"]}
+            decoded = []
+            for series in page["series"]:
+                if series["id"] not in blobs:
+                    raise ValueError(f"Missing SoCPK data for series {series['id']}.")
+                decoded.append({**series, "points": decode_chart_blob(blobs[series["id"]])})
+            return {**page, "series": decoded}
+    raise ValueError(f"Could not refresh SoCPK chart data: {slug}.")
+
+
+def _curve_name_key(name: str) -> str:
+    """Accept previous CLI abbreviations without conflating RAM variants."""
+    name = re.sub(r"\s+", "", name).casefold().removesuffix("bionic")
+    for short, full in (("sd", "snapdragon"), ("d", "dimensity"),
+                        ("k", "kirin"), ("e", "exynos")):
+        if re.match(rf"{short}\d", name):
+            return full + name[len(short):]
+    return name
+
+
+def fetch_curve_series(
+    slug: str, names=None, *, suite: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get validated series from one fresh poll, optionally selecting a suite."""
+    page = fetch_chart_page(slug)
+    if page.get("type") != "line-chart" or page.get("config", {}).get("xUnit") != "W":
+        raise ValueError("Expected a SoCPK power-versus-score chart in watts.")
+    series = [item for item in page["series"]
+              if suite is None or item.get("meta", {}).get("suite") == suite]
+    if names is not None:
+        selected = []
+        for name in names:
+            matches = [item for item in series if _curve_name_key(name) in {
+                _curve_name_key(item.get("name", "")),
+                _curve_name_key(item.get("name_en", "")),
+            }]
+            if len(matches) != 1:
+                raise ValueError(f"Unknown or ambiguous SoCPK curve: {name!r}.")
+            if matches[0] not in selected:
+                selected.append(matches[0])
+        series = selected
+    for item in series:
+        points = item.get("points")
+        if not isinstance(points, list):
+            raise ValueError(f"Invalid points for {item['name']}.")
+        for point in points:
+            if (not isinstance(point, list) or len(point) != 2
+                    or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in point)
+                    or point[0] <= 0 or point[1] < 0):
+                raise ValueError(f"Invalid power/score point for {item['name']}.")
+    return series
+
+
+def curve_frame(series, id_column: str, score_column: str):
+    """Convert decoded coordinates into the existing CSV schema."""
+    import pandas as pd
+
+    rows = [
+        {id_column: item.get("name_en") or item["name"],
+         "Board_Power_W": power, score_column: score, "Efficiency": score / power}
+        for item in series for power, score in item["points"]
+    ]
+    return pd.DataFrame(rows, columns=[id_column, "Board_Power_W", score_column, "Efficiency"])
+
+
+def battery_rows_from_page(page: dict[str, Any]) -> list[list]:
+    """Adapt API battery metadata and runtime to the legacy seven-column rows."""
+    if page.get("type") != "bar-chart" or page.get("config", {}).get("unit") != "min":
+        raise ValueError("Expected a SoCPK battery runtime chart in minutes.")
+    rows = []
+    for series in page["series"]:
+        meta = series.get("meta", {})
+        minutes = series.get("points")
+        if isinstance(minutes, list):
+            minutes = minutes[0] if minutes else None
+        capacity = meta.get("ratedEnergyWh")
+        if not all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0
+                   for v in (minutes, capacity)):
+            continue
+        brand = series.get("group", "")
+        model = series["name"]
+        if brand and model.casefold().startswith(brand.casefold() + " "):
+            model = model[len(brand):].strip()
+        # Remove codec quantization noise from runtime in minutes.
+        rows.append([brand, model, round(minutes, 3), meta.get("systemVersion", ""), "",
+                     capacity, meta.get("videoUrl", "")])
+    if not rows:
+        raise ValueError("SoCPK API contains no usable battery results.")
+    return rows
+
+
+@contextmanager
+def new_snapshot(path: str | Path):
+    """Exclusively create an export; existing files always remain untouched.
+
+    A timestamped sibling is created when the requested path already exists.
+    Exclusive creation also protects against concurrent polls and collisions.
+    """
+    requested = Path(path)
+    requested.parent.mkdir(parents=True, exist_ok=True)
+    candidate = requested
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    sequence = 0
+    while True:
+        try:
+            handle = candidate.open("x", newline="", encoding="utf-8")
+            break
+        except FileExistsError:
+            sequence += 1
+            candidate = requested.with_name(
+                f"{requested.stem}_{stamp}_{sequence}{requested.suffix}"
+            )
+    try:
+        with handle:
+            yield handle
+    except BaseException:
+        candidate.unlink()
+        raise
 
 _MODULE_RE = re.compile(
     r"<script\b[^>]*\bsrc=[\"']([^\"']+)[\"']",
@@ -86,15 +319,12 @@ def fetch_spa_payload(
 
 
 def fetch_rankings(page_url: str = SOCPK_ROOT) -> dict[str, Any]:
-    """Return current ranking datasets from SoCPK."""
-    payload = fetch_spa_payload(RANKINGS_PAYLOAD_KEY, page_url)
-    if not isinstance(payload, dict):
-        raise ValueError("SoCPK rankings payload is not an object.")
-    return payload
+    """Return current battery rankings in the previously used payload shape."""
+    return {"battery50": battery_rows_from_page(fetch_chart_page(BATTERY_PAGE_SLUG, page_url))}
 
 
 def fetch_curve_manifest(page_url: str = SOCPK_ROOT) -> dict[str, Any]:
-    """Return current curve configuration and asset manifest from SoCPK."""
+    """Read a legacy embedded curve manifest from an explicitly supplied SPA."""
     payload = fetch_spa_payload(CURVES_PAYLOAD_KEY, page_url)
     if not isinstance(payload, dict):
         raise ValueError("SoCPK curve payload is not an object.")

@@ -1,51 +1,8 @@
-"""
-cpu_curve_parser.py
-====================
+"""Fetch Geekbench 6 CPU curves from SoCPK's public chart API.
 
-This module provides both a library and a command‑line interface for
-extracting Geekbench 6 multi‑core performance curves from the SocPK
-website.  Each processor’s curve is published as a separate SVG
-under ``https://www.socpk.com/assets/curves/cpu-gb6/cpu/``.  The
-underlying functions convert pixel positions in the SVG into
-physical board power (W) and Geekbench score by reading the base
-axis layer ``Geekbench 6_asis.svg``.  A convenience function
-``scrape_cpu_curves`` loops over a list of chip names and
-aggregates the results into a single pandas DataFrame.
-
-Key features
-------------
-
-* **Current axis geometry.**  Before parsing curves the script fetches
-  the base axis layer and derives its horizontal and vertical bounds.
-* **Support for continuous and scatter curves.**  Some chips
-  (e.g. Qualcomm Snapdragon) publish a continuous line, while
-  others (e.g. Apple A‑series) only provide a few scatter points.
-  ``parse_cpu_curve`` handles both cases.
-* **Efficiency calculation.**  For each point the script
-  computes an ``Efficiency`` column defined as
-  ``GB6_Multi_Score / Board_Power_W``.  Points with zero power are
-  assigned ``NaN`` efficiency to avoid division by zero.
-* **Command‑line interface.**  Running this file as a script allows
-  you to scrape multiple CPUs and write the results to a CSV file.
-
-Example
--------
-
-Fetch a single chip into a DataFrame::
-
-    from cpu_curve_parser import parse_cpu_curve, refresh_axis_scaling
-    refresh_axis_scaling()  # update scaling from base SVG
-    df = parse_cpu_curve("A19 Pro")
-    print(df.head())
-
-Scrape a list of chips and save to CSV::
-
-    # Running from the command line
-    python cpu_curve_parser.py --cpus "A19" "A19 Pro" --output apple_soc_points.csv
-
-The resulting CSV will contain columns ``CPU``, ``Board_Power_W``,
-``GB6_Multi_Score`` and ``Efficiency``.  You can further process
-this file with the companion ``curve_analysis`` script.
+The API supplies power and scores directly. Explicit ``base_url`` arguments
+still support legacy SVG sources using the axis helpers below. CSV exports
+create separate snapshots and never replace an existing file.
 """
 
 from __future__ import annotations
@@ -53,7 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from urllib.parse import quote, unquote, urljoin, urlparse
+from urllib.parse import quote
 from typing import Iterable, List, Optional, Dict
 
 import pandas as pd  # type: ignore
@@ -66,7 +23,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from socpk_client import (  # noqa: E402
     extract_axis_geometry,
     extract_curve_coordinates,
-    fetch_curve_manifest,
+    CPU_PAGE_SLUG,
+    fetch_curve_series,
+    curve_frame,
+    new_snapshot,
 )
 
 __all__ = [
@@ -83,21 +43,12 @@ CPU_AXIS_URL = (
 )
 CPU_LAYER_BASE_URL = "https://www.socpk.com/assets/curves/cpu-gb6/cpu/"
 
-_FALLBACK_CPU_NAMES: List[str] = [
-    "A16", "A17 Pro", "A18", "A18 Pro", "A19", "A19 Pro",
-    "SD8 Elite Gen5", "SD8 Elite (9600)", "SD8 Elite (8533)",
-    "SD8 Gen5", "SD8 Gen3", "SD8 Gen2", "SD8+ Gen1", "SD8s Gen3",
-    "SD7+ Gen3", "D9500", "D9400 (10667)", "D9400 (8533)",
-    "D9300+", "D9200+", "D8400 MAX", "D8300 Ultra", "K9020",
-    "K9010", "K9000S", "K9000SL", "K8000", "Tensor G4",
-    "Tensor G3", "E2400", "XRing O1",
-]
 
 ###############################################################################
 # Axis scaling constants and helpers
 ###############################################################################
 
-# Current GB6 axis ranges.  Runtime refresh updates the SVG plot geometry;
+# Legacy GB6 axis ranges.  Runtime refresh updates the SVG plot geometry;
 # the site's outlined tick labels are not machine-readable text.
 X_START: float = 144.0
 X_WIDTH: float = 892.8
@@ -167,78 +118,25 @@ def _to_score(y: float) -> float:
     return (Y_BASE - y) / Y_HEIGHT * SCORE_RANGE
 
 
-def _cpu_layer_urls() -> Dict[str, str]:
-    """Return current curve names mapped to absolute SVG URLs."""
-    manifest = fetch_curve_manifest(CPU_PAGE_URL)
-    config = manifest.get("cpuGb6")
-    if not isinstance(config, dict):
-        raise ValueError("SoCPK manifest contains no cpuGb6 configuration.")
-
-    result = {}
-    for layer in config.get("layers", []):
-        src = layer.get("src") if isinstance(layer, dict) else None
-        if not isinstance(src, str):
-            continue
-        filename = unquote(urlparse(src).path.rsplit("/", 1)[-1])
-        if not filename.startswith("CPU_gb6_") or not filename.endswith(".svg"):
-            continue
-        name = filename[len("CPU_gb6_"):-len(".svg")]
-        result[name] = urljoin(CPU_PAGE_URL, src)
-    return result
-
-
 def discover_cpu_names() -> List[str]:
-    """Return CPU names published in the current SoCPK curve manifest."""
-    try:
-        return list(_cpu_layer_urls())
-    except (requests.RequestException, ValueError):
-        return []
-
-
-def _cpu_curve_url(cpu_name: str) -> str:
-    try:
-        layers = _cpu_layer_urls()
-        by_casefold = {name.casefold(): url for name, url in layers.items()}
-        manifest_url = by_casefold.get(cpu_name.casefold())
-        if manifest_url:
-            return manifest_url
-    except (requests.RequestException, ValueError):
-        pass
-    return f"{CPU_LAYER_BASE_URL}CPU_gb6_{quote(cpu_name, safe='')}.svg"
+    """Return names currently published in the chart API."""
+    return [item.get("name_en") or item["name"]
+            for item in fetch_curve_series(CPU_PAGE_SLUG, suite="GB6")]
 
 
 def parse_cpu_curve(
     cpu_name: str,
     base_url: Optional[str] = None,
 ) -> Optional[pd.DataFrame]:
-    """Download and parse a single CPU efficiency curve.
-
-    Parameters
-    ----------
-    cpu_name : str
-        Human‑readable name of the CPU (e.g. "SD8 Elite Gen5").
-    base_url : str, optional
-        Base URL where CPU SVG files are stored.  Override this if
-        using a mirror.
-
-    Returns
-    -------
-    pandas.DataFrame or None
-        DataFrame with columns ``['Board_Power_W', 'GB6_Multi_Score',
-        'Efficiency']``.  Returns ``None`` if the SVG cannot be
-        downloaded or contains no data.
-
-    Notes
-    -----
-    The function first attempts to extract a continuous curve from a
-    ``<path>`` element inside a ``<g id="line2d_1">`` group.  If no
-    such element exists, it falls back to scatter points defined by
-    ``<use x="..." y="...">``.  Only numeric coordinates are used.
-    """
+    """Fetch one curve; an explicit base URL selects the legacy SVG parser."""
+    if base_url is None:
+        frame = curve_frame(
+            fetch_curve_series(CPU_PAGE_SLUG, [cpu_name], suite="GB6"),
+            "CPU", "GB6_Multi_Score",
+        )
+        return frame.drop(columns=["CPU"])
     if base_url is not None:
         svg_url = f"{base_url.rstrip('/')}/CPU_gb6_{quote(cpu_name, safe='')}.svg"
-    else:
-        svg_url = _cpu_curve_url(cpu_name)
     try:
         resp = requests.get(svg_url, timeout=10)
     except requests.RequestException:
@@ -260,82 +158,35 @@ def scrape_cpu_curves(
     *,
     default_cpu_names: Optional[List[str]] = None,
 ) -> pd.DataFrame:
-    """Scrape multiple CPU curves into a single DataFrame.
+    """Fetch all selected curves in one poll, preserving the CSV schema.
 
-    Parameters
-    ----------
-    cpu_names : iterable of str, optional
-        Names of CPUs to scrape.  If ``None``, names are discovered from
-        the current SoCPK manifest, then optional/default fallbacks are used.
-    default_cpu_names : list of str, optional
-        Fallback list used only if current manifest discovery fails.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Combined results with columns ``['CPU', 'Board_Power_W',
-        'GB6_Multi_Score', 'Efficiency']``.  The returned DataFrame
-        may be empty if no curves could be scraped.
+    ``default_cpu_names`` is retained for caller compatibility. Discovery
+    now requires a working API; obsolete asset lists cannot recover failures.
     """
-    # Update axis scaling first.  If this fails, we use existing
-    # defaults; no exception is raised.
-    try:
-        refresh_axis_scaling()
-    except Exception:
-        pass
-    if cpu_names is not None:
-        names = list(cpu_names)
-    else:
-        names = discover_cpu_names()
-        if not names and default_cpu_names is not None:
-            names = default_cpu_names
-        if not names:
-            names = _FALLBACK_CPU_NAMES
-    frames: List[pd.DataFrame] = []
-    for name in names:
-        try:
-            df = parse_cpu_curve(name)
-        except Exception as exc:
-            print(f"Error parsing {name}: {exc}")
-            continue
-        if df is None or df.empty:
-            continue
-        df['CPU'] = name
-        frames.append(df)
-    if not frames:
-        return pd.DataFrame(columns=['CPU', 'Board_Power_W', 'GB6_Multi_Score', 'Efficiency'])
-    combined = pd.concat(frames, ignore_index=True)
-    # Ensure efficiency column exists (in case parse_cpu_curve didn't compute it)
-    if 'Efficiency' not in combined.columns:
-        combined['Efficiency'] = combined['GB6_Multi_Score'] / combined['Board_Power_W'].replace(0, pd.NA)
-    return combined[['CPU', 'Board_Power_W', 'GB6_Multi_Score', 'Efficiency']]
+    return curve_frame(
+        fetch_curve_series(CPU_PAGE_SLUG, cpu_names, suite="GB6"),
+        "CPU", "GB6_Multi_Score",
+    )
 
 
 def main() -> None:
-    """Entry point for the command‑line interface.
-
-    Use ``--cpus`` to specify one or more CPU names to scrape.  If
-    omitted, current curve names are discovered.  Use ``--output`` to write
-    the aggregated results to a CSV file; otherwise the DataFrame is
-    printed to stdout.
-    """
-    parser = argparse.ArgumentParser(description="Scrape Geekbench 6 CPU curves from SocPK")
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--cpus', nargs='*', default=None,
-                        help="Names of CPUs to scrape (e.g. 'A19 Pro' 'SD8 Elite Gen5').  "
-                             "If omitted, current curves are discovered.")
-    parser.add_argument('--output', type=str, default="cpu_curves.csv",
-                        help="Path to a CSV file where results will be written.  "
-                             "If not provided, the DataFrame is printed.")
+                        help="Names to scrape; discovers all if omitted.")
+    parser.add_argument('--output', default="snapshots/cpu_gb6_curves.csv",
+                        help="Snapshot CSV path; an existing path gets a timestamped sibling.")
     args = parser.parse_args()
-    df = scrape_cpu_curves(args.cpus)
-    if df.empty:
-        print("No CPU curves scraped.  Check network connectivity or update the processor list.")
+    try:
+        frame = scrape_cpu_curves(args.cpus)
+    except (requests.RequestException, ValueError) as exc:
+        raise SystemExit(f"Could not fetch SoCPK curves: {exc}") from exc
+    if frame.empty:
+        print("No curves scraped; no file written.")
         return
-    if args.output:
-        df.to_csv(args.output, index=False)
-        print(f"Scraped {len(df)} rows for {df['CPU'].nunique()} CPUs → {args.output}")
-    else:
-        print(df)
+    with new_snapshot(args.output) as output:
+        frame.to_csv(output, index=False)
+        output_path = output.name
+    print(f"Scraped {len(frame)} rows for {frame['CPU'].nunique()} CPUs → {output_path}")
 
 
 if __name__ == '__main__':
