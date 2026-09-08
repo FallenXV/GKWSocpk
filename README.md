@@ -1,16 +1,17 @@
 # GKWSocpk
 
-Scrapes socpk.com for battery life and efficiency results.
+Scrapes socpk.com for battery life and efficiency results, exports them as CSV
+snapshots, and compares the snapshots in a Tk dashboard.
 
-IMPORTANT: Apple SoCs only have a few points and may not be representative of actual efficiency curve.
+Apple SoCs publish only a few points, so their curves may not represent the
+real efficiency curve.
 
-Note: This is a personal project and is not affiliated with socpk.com. Please respect their terms of service when using this script.
+This is a personal project, not affiliated with socpk.com. Respect the site's
+terms of service when using it.
 
 ## Requirements
 
-Python 3.13 (with Tk support, for the GUI).
-
-### Setup
+Python 3.13, with Tk support for the GUI.
 
 Create and activate a virtual environment, then install dependencies:
 
@@ -20,13 +21,13 @@ py -3.13 -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-On bash/WSL, activate with `source .venv/bin/activate` instead.
+On bash/WSL, activate with `source .venv/bin/activate`.
 
-`requirements.txt` holds the direct dependencies; `requirements.lock.txt` is a
-`pip freeze` of a known-good resolution — install from it if you need to
-reproduce the exact environment.
+`requirements.txt` lists the direct dependencies. `requirements.lock.txt` is a
+`pip freeze` of a known-good resolution; install from it to reproduce that
+exact environment.
 
-### Running
+## Collecting data
 
 With the venv active:
 
@@ -35,46 +36,49 @@ python Battery\battery_parser.py
 python "Performance Benchmark\cpu_curve_parser.py" --benchmark all
 python "Performance Benchmark\gpu_curve_parser.py"
 python "Performance Benchmark\laptop_gpu_curve_parser.py"
-python socpk_gui.py
 ```
 
-The parsers use SoCPK's September 2026 chart API, including its public chart
-tokens and binary point format. No browser or additional dependencies are
-needed. Each poll fetches fresh data and retries once if a token expires or
-the chart changes between requests. Legacy battery JS and explicitly supplied
-SVG base URLs remain supported.
+The parsers read SoCPK's September 2026 chart API, including its public chart
+tokens and binary point format. No browser or extra dependencies are required.
+Each poll fetches fresh data and retries once if a token expires or the chart
+changes between requests. Legacy battery JS sources and explicitly supplied
+SVG base URLs also work.
 
-New exports go under `snapshots/` relative to your working directory:
+Exports go to `snapshots/` relative to the working directory:
 
-- `cpu_gb6_curves.csv`: Geekbench 6 multi-core.
-- `cpu_gb7_curves.csv`: Geekbench 7 multi-core.
-- `cpu_spec2026_int_curves.csv`: SPEC CPU 2026 single-core integer scores.
-- `cpu_spec2026_fp_curves.csv`: SPEC CPU 2026 single-core floating-point scores.
-- `gpu_snl_curves.csv`: phone GPU Steel Nomad Light.
-- `laptop_gpu_curves.csv`: laptop GPU Time Spy.
-- `battery_results.csv`: battery test 5.0 runtime, rated Wh and efficiency.
+| File | Contents |
+| --- | --- |
+| `cpu_gb6_curves.csv` | Geekbench 6 multi-core |
+| `cpu_gb7_curves.csv` | Geekbench 7 multi-core |
+| `cpu_spec2026_int_curves.csv` | SPEC CPU 2026 single-core integer |
+| `cpu_spec2026_fp_curves.csv` | SPEC CPU 2026 single-core floating-point |
+| `gpu_snl_curves.csv` | Phone GPU, Steel Nomad Light |
+| `laptop_gpu_curves.csv` | Laptop GPU, Time Spy |
+| `battery_results.csv` | Battery test 5.0 runtime, rated Wh, efficiency |
 
-**Existing files are never overwritten**, including custom `--output`,
-`--csv`, and `--json` paths. If a path exists, the export creates a sibling
-with a UTC timestamp. Sparse results therefore cannot replace historical
-data. Empty curve results produce no file; failed writes remove the incomplete
-snapshot. The scripts print the actual saved path.
+Exports never overwrite an existing file, including paths given with
+`--output`, `--csv`, or `--json`. If the path is taken, the export writes a
+sibling with a UTC timestamp, so a sparse result cannot replace historical
+data. An empty curve result writes no file, and a failed write deletes the
+partial snapshot. Each script prints the path it wrote.
 
-Curve exports retain the API's published points, which may include fitted
-curves; they do not interpolate extra points. Names use the site's English
-name when available. Previous CLI abbreviations such as `SD8 Gen3` remain
-accepted when they identify a single current series.
+Curve exports keep the API's published points, which may include fitted
+curves, and interpolate nothing. Names use the site's English name where one
+exists. CLI abbreviations such as `SD8 Gen3` resolve when they identify a
+single current series.
 
-CPU benchmarks have separate score columns and separate dashboard tabs. The
-existing `GB6_Multi_Score` schema remains supported; GB7 uses `GB7_Multi_Score`,
-and SPEC uses `SPEC2026_INT_Score` or `SPEC2026_FP_Score`. SPEC snapshots also
-include `Core`, `Core_Group`, and `Core_Variant`, so different cores of the same
-chip remain separate profiles. Scores and score/W retain their fractional
-precision; the dashboard shows SPEC values to three decimal places.
+### CPU benchmarks
 
-`--benchmark all` polls both CPU source pages once and writes four separate
-snapshots. Without `--benchmark`, the CPU parser still defaults to GB6 for
-existing commands. To collect a specific benchmark or core group:
+Each benchmark has its own score column and its own dashboard tab:
+`GB6_Multi_Score`, `GB7_Multi_Score`, `SPEC2026_INT_Score`, and
+`SPEC2026_FP_Score`. SPEC snapshots also carry `Core`, `Core_Group`, and
+`Core_Variant`, which keep different cores of one chip as separate profiles.
+Scores and score/W keep their fractional precision; the dashboard prints SPEC
+values to three decimals.
+
+`--benchmark all` polls both CPU source pages once and writes four snapshots.
+Without `--benchmark`, the parser exports GB6. To collect one benchmark or one
+core group:
 
 ```powershell
 python "Performance Benchmark\cpu_curve_parser.py" --benchmark GB7
@@ -82,30 +86,78 @@ python "Performance Benchmark\cpu_curve_parser.py" --benchmark SPEC2026_INT --cp
 python "Performance Benchmark\cpu_curve_parser.py" --benchmark SPEC2026_FP --core-group medium
 ```
 
-Use `--output-dir` with `--benchmark all`, or `--output` for a single benchmark.
-Core-group choices are the site's `super`, `large`, `medium`, and `small`.
-Selecting a chip for SPEC includes all its published cores unless filtered.
-The standalone `curve_analysis.py` also recognizes the new schemas and
-keeps each SPEC core separate.
+`--output-dir` applies to `--benchmark all`; `--output` applies to a single
+benchmark. Core groups are the site's `super`, `large`, `medium`, and `small`.
+Naming a chip for SPEC pulls all of its published cores unless `--core-group`
+narrows them.
 
-The comparison dashboard automatically finds and merges recognized CPU, GPU,
-and battery CSVs under the project folder. Use the tabs to switch datasets,
-search and multi-select profiles, change chart modes, or export the current
-comparison as PNG, SVG, or PDF.
+### GPU and battery parsers
 
-Choose **GB6 MULTI**, **GB7 MULTI**, **SPEC26 INT**, or **SPEC26 FP** to switch
-CPU benchmarks. Search by chip or core name, and use the horizontal profile
-scrollbar to inspect long core labels. Rankings and comparisons stay within
-the selected benchmark. Existing CSVs continue to load alongside snapshots.
+`gpu_curve_parser.py` and `laptop_gpu_curve_parser.py` take `--gpus` to limit
+the scrape and `--output` to set the snapshot path; both discover every
+published GPU when `--gpus` is omitted.
 
-Battery charts retain the pulled SoCPK points and overlay Geekerwan's static
-measured usable-capacity results where a device matches. Hollow diamonds mark
-the measured values; the measured Wh point is derived by scaling the pulled Wh
-capacity by `measured mAh / advertised mAh`. These overlays do not change the
-pulled CSV data or the dashboard rankings.
+`battery_parser.py` takes `--site` to pick the battery dataset (default 5.0),
+`--url` to override source URLs, `--csv` and `--json` for snapshot paths, and
+`--brand-lang source|en` for output brand names. GSMArena enrichment uses
+`--spec 'Brand|Model=url'`, `--spec-map-json`, and `--spec-offline` for
+cache-only runs. `--preview` prints an enriched table and `--correlate` prints
+Pearson correlations against efficiency.
 
-To compare only specific files:
+## Dashboard
 
 ```powershell
-python socpk_gui.py --csv cpu_curves.csv --csv gpu_curves.csv
+python socpk_gui.py
 ```
+
+The dashboard scans the project folder for recognized CPU, GPU, and battery
+CSVs and merges them. Tabs switch datasets: GB6 MULTI, GB7 MULTI, SPEC26 INT,
+SPEC26 FP, GPU, LAPTOP GPU, and BATTERY. Rankings and comparisons stay within
+the selected tab. Curve tabs chart an efficiency curve, a performance curve,
+or efficiency vs score; battery tabs chart runtime vs capacity, energy
+efficiency, or average power draw. Export the current chart as PNG, SVG, or
+PDF.
+
+Search by chip or core name, multi-select profiles from the list, and use the
+horizontal scrollbar to read long core labels. Top 5 and All shown stay active
+as filters, search, and chart views change. Top 5 ranks matching profiles using
+the current chart metric. Picking profiles manually releases the automatic
+selection mode; Clear keeps the selection empty until another choice is made.
+
+SPEC tabs add a FILTER CORES panel below those buttons. The Super, Large,
+Medium, and Small buttons toggle core groups, and the core-name menu supports
+multiple checked names. Matches within each field are combined; a profile
+must match both the groups and names selected. All clears the core filters.
+Filters and selection modes are kept independently for each benchmark.
+
+Curve legends show the chip and core name; the leader card and hover details
+retain core types. Dotted lines join two or three sparse SPEC samples from the
+same core and source without adding interpolated data points.
+
+Battery charts show the pulled SoCPK points and overlay Geekerwan's static
+measured usable-capacity results where a device matches. Hollow diamonds mark
+the measured values; the measured Wh point scales the pulled Wh capacity by
+`measured mAh / advertised mAh`. The overlays do not affect the CSV data or
+the rankings.
+
+Flags:
+
+```powershell
+python socpk_gui.py --csv cpu_gb6_curves.csv --csv gpu_snl_curves.csv
+python socpk_gui.py --root . --dataset "SPEC INT"
+```
+
+`--csv` (alias `--input`) loads only the named files and can repeat. `--root`
+sets the folder to scan. `--dataset` picks the tab shown at startup, and takes
+`CPU` (GB6), `CPU GB7`, `SPEC INT`, `SPEC FP`, `GPU`, `Laptop GPU`, or
+`Battery`.
+
+## Other scripts
+
+`Performance Benchmark\curve_analysis.py --input <csv>` reads a CPU or GPU
+snapshot and plots per-model power, score, and efficiency statistics; `--save`
+writes the figures as PNGs instead of displaying them. It reads the current
+schemas and keeps each SPEC core separate.
+
+`Performance Benchmark\soc_curve_gui.py` is a launcher kept for older commands
+and starts the same dashboard as `socpk_gui.py`.

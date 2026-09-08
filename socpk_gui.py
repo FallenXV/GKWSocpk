@@ -78,6 +78,13 @@ class DatasetDefinition:
 
 
 @dataclass(frozen=True)
+class CoreFilter:
+    # Empty sets mean unrestricted; selections within each field are ORed.
+    groups: frozenset[str] = frozenset()
+    names: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
 class HoverPoint:
     x: float
     y: float
@@ -437,6 +444,8 @@ class ComparisonDashboard:
         self.visible_labels: list[str] = []
         self.dataset_key = ""
         self.nav_buttons: dict[str, ttk.Button] = {}
+        self.core_filters: dict[str, CoreFilter] = {}
+        self.selection_modes: dict[str, str] = {}
         self.line_artists = []
         self.ranking_values = pd.Series(dtype=float)
         self.ranking_metric_label = ""
@@ -493,9 +502,19 @@ class ComparisonDashboard:
             font=("Segoe UI Semibold", 9),
         )
         style.map("Compact.TButton", background=[("active", "#22304e")])
+        style.configure("Core.TButton", padding=(4, 7), width=0, background=PANEL_2,
+                        foreground=TEXT, font=("Segoe UI", 9))
+        style.map("Core.TButton", background=[("active", "#22304e")])
+        style.configure("ActiveCore.TButton", padding=(4, 7), width=0, background=ACCENT,
+                        foreground="#ffffff", font=("Segoe UI Semibold", 9))
+        style.map("ActiveCore.TButton", background=[("active", "#9387ff")])
+        style.configure("ActiveMaster.TButton", padding=(6, 8), width=6, background=ACCENT,
+                        foreground=TEXT, font=("Segoe UI Semibold", 9))
+        style.map("ActiveMaster.TButton", background=[("active", "#9387ff")])
         style.configure(
             "Nav.TButton",
-            padding=(20, 11),
+            padding=(8, 10),
+            width=0,
             background=PANEL,
             foreground=MUTED,
             font=("Segoe UI Semibold", 10),
@@ -503,7 +522,8 @@ class ComparisonDashboard:
         style.map("Nav.TButton", background=[("active", PANEL_2)], foreground=[("active", TEXT)])
         style.configure(
             "ActiveNav.TButton",
-            padding=(20, 11),
+            padding=(8, 10),
+            width=0,
             background=ACCENT,
             foreground="#ffffff",
             font=("Segoe UI Semibold", 10),
@@ -542,66 +562,42 @@ class ComparisonDashboard:
 
     def _build_layout(self) -> None:
         shell = tk.Frame(self.root, bg=APP_BG)
-        shell.pack(fill=tk.BOTH, expand=True, padx=24, pady=(20, 22))
+        shell.pack(fill=tk.BOTH, expand=True, padx=16, pady=(12, 14))
 
         header = tk.Frame(shell, bg=APP_BG)
-        header.pack(fill=tk.X, pady=(0, 16))
+        header.pack(fill=tk.X, pady=(0, 8))
 
+        header.columnconfigure(1, weight=1)
         brand = tk.Frame(header, bg=APP_BG)
-        brand.pack(side=tk.LEFT)
-        tk.Label(
-            brand,
-            text="SoCPK",
-            bg=APP_BG,
-            fg=TEXT,
-            font=("Segoe UI Semibold", 24),
-        ).pack(side=tk.LEFT)
-        tk.Label(
-            brand,
-            text="COMPARISON LAB",
-            bg=ACCENT,
-            fg="#ffffff",
-            font=("Segoe UI Semibold", 8),
-            padx=8,
-            pady=4,
-        ).pack(side=tk.LEFT, padx=(10, 0), pady=(7, 0))
+        brand.grid(row=0, column=0, sticky="w", padx=(0, 8))
+        tk.Label(brand, text="SoCPK", bg=APP_BG, fg=TEXT,
+                 font=("Segoe UI Semibold", 24)).pack(anchor="w")
 
-        actions = tk.Frame(header, bg=APP_BG)
-        actions.pack(side=tk.RIGHT)
-        ttk.Button(actions, text="Reload data", command=self.reload_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            actions,
-            text="Export chart",
-            style="Accent.TButton",
-            command=self.export_chart,
-        ).pack(side=tk.LEFT, padx=(5, 0))
-
-        nav_row = tk.Frame(shell, bg=APP_BG)
-        nav_row.pack(fill=tk.X, pady=(0, 14))
-        nav = tk.Frame(nav_row, bg=PANEL, padx=4, pady=4)
-        nav.pack(side=tk.LEFT)
+        nav = tk.Frame(header, bg=PANEL, padx=3, pady=3)
+        nav.grid(row=0, column=1, sticky="ew")
         for index, (key, definition) in enumerate(DATASET_DEFINITIONS.items()):
+            nav.columnconfigure(index, weight=1)
             button = ttk.Button(
-                nav,
-                text=definition.tab_label or key.upper(),
-                style="Nav.TButton",
+                nav, text=definition.tab_label or key.upper(), style="Nav.TButton",
                 command=lambda chosen=key: self.set_dataset(chosen),
             )
-            button.grid(row=index // 4, column=index % 4, sticky="ew", padx=1, pady=1)
+            button.grid(row=0, column=index, sticky="ew", padx=1)
             self.nav_buttons[key] = button
-        self.source_note = tk.Label(
-            nav_row,
-            text="",
-            bg=APP_BG,
-            fg=MUTED,
-            font=("Segoe UI", 9),
-        )
-        self.source_note.pack(side=tk.RIGHT)
+
+        actions = tk.Frame(header, bg=APP_BG)
+        actions.grid(row=0, column=2, sticky="e", padx=(10, 0))
+        ttk.Button(actions, text="Reload data", command=self.reload_data).grid(row=0, column=0, padx=(0, 5))
+        ttk.Button(actions, text="Export chart", style="Accent.TButton",
+                   command=self.export_chart).grid(row=0, column=1)
+        self.source_note = tk.Label(actions, text="", bg=APP_BG, fg=MUTED, font=("Segoe UI", 8))
+        self.source_note.grid(row=1, column=0, columnspan=2, sticky="e", pady=(3, 0))
 
         self.hero = tk.Frame(shell, bg=APP_BG)
-        self.hero.pack(fill=tk.X, pady=(0, 14))
+        self.hero.pack(fill=tk.X, pady=(0, 8))
         hero_text = tk.Frame(self.hero, bg=APP_BG)
-        hero_text.pack(side=tk.LEFT)
+        self.hero.columnconfigure(0, weight=1)
+        self.hero.columnconfigure(1, weight=2)
+        hero_text.grid(row=0, column=0, sticky="w", padx=(0, 12))
         self.kicker_label = tk.Label(
             hero_text,
             text="",
@@ -609,18 +605,20 @@ class ComparisonDashboard:
             fg=CYAN,
             font=("Segoe UI Semibold", 10),
         )
+        self.kicker_label.configure(wraplength=300, justify=tk.LEFT)
         self.kicker_label.pack(anchor="w")
         self.title_label = tk.Label(
             hero_text,
             text="",
             bg=APP_BG,
             fg=TEXT,
-            font=("Segoe UI Semibold", 28),
+            font=("Segoe UI Semibold", 20),
+            wraplength=330, justify=tk.LEFT,
         )
         self.title_label.pack(anchor="w", pady=(2, 0))
 
         self.stats_frame = tk.Frame(self.hero, bg=APP_BG)
-        self.stats_frame.pack(side=tk.RIGHT)
+        self.stats_frame.grid(row=0, column=1, sticky="ew")
         self.stat_values: dict[str, tk.Label] = {}
         for key, label, color in (
             ("profiles", "PROFILES", ACCENT),
@@ -632,8 +630,8 @@ class ComparisonDashboard:
         body = tk.Frame(shell, bg=APP_BG)
         body.pack(fill=tk.BOTH, expand=True)
 
-        sidebar = tk.Frame(body, bg=PANEL, width=285, padx=18, pady=18)
-        sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 14))
+        sidebar = tk.Frame(body, bg=PANEL, width=285, padx=14, pady=12)
+        sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
         sidebar.pack_propagate(False)
 
         tk.Label(
@@ -650,8 +648,8 @@ class ComparisonDashboard:
             state="readonly",
             font=("Segoe UI", 10),
         )
-        self.view_combo.pack(fill=tk.X, pady=(7, 16))
-        self.view_combo.bind("<<ComboboxSelected>>", lambda _event: self.draw_charts())
+        self.view_combo.pack(fill=tk.X, pady=(4, 10))
+        self.view_combo.bind("<<ComboboxSelected>>", self.on_view_change)
 
         tk.Label(
             sidebar,
@@ -662,8 +660,8 @@ class ComparisonDashboard:
         ).pack(anchor="w")
         self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(sidebar, textvariable=self.search_var)
-        self.search_entry.pack(fill=tk.X, pady=(7, 12))
-        self.search_var.trace_add("write", lambda *_args: self.refresh_profile_list())
+        self.search_entry.pack(fill=tk.X, pady=(4, 8))
+        self.search_var.trace_add("write", self.on_search_change)
 
         list_shell = tk.Frame(sidebar, bg=PANEL_2, highlightthickness=1, highlightbackground=GRID)
         list_shell.pack(fill=tk.BOTH, expand=True)
@@ -693,30 +691,35 @@ class ComparisonDashboard:
 
         quick = tk.Frame(sidebar, bg=PANEL)
         quick.pack(fill=tk.X, pady=(0, 8), before=list_shell)
-        ttk.Button(
-            quick,
-            text="Top 5",
-            style="Compact.TButton",
-            command=self.select_top_five,
-        ).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4)
-        )
-        ttk.Button(
-            quick,
-            text="All shown",
-            style="Compact.TButton",
-            command=self.select_visible,
-        ).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=4
-        )
-        ttk.Button(
-            quick,
-            text="Clear",
-            style="Compact.TButton",
-            command=self.clear_selection,
-        ).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0)
-        )
+        self.selection_buttons = {}
+        for mode, title, command in (("top5", "Top 5", self.select_top_five),
+                                     ("all", "All shown", self.select_visible),
+                                     ("clear", "Clear", self.clear_selection)):
+            button = ttk.Button(quick, text=title, style="Compact.TButton", command=command)
+            button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+            self.selection_buttons[mode] = button
+        self.core_filter_panel = tk.Frame(sidebar, bg=PANEL)
+        tk.Label(self.core_filter_panel, text="FILTER CORES", bg=PANEL, fg=MUTED,
+                 font=("Segoe UI Semibold", 9)).pack(anchor="w", pady=(2, 5))
+        core_buttons = tk.Frame(self.core_filter_panel, bg=PANEL)
+        core_buttons.pack(fill=tk.X)
+        self.core_group_buttons = {}
+        for index, (group, label) in enumerate(
+            (("", "All"), ("super", "Super"), ("large", "Large"), ("medium", "Medium"), ("small", "Small"))
+        ):
+            button = ttk.Button(core_buttons, text=label, style="Core.TButton",
+                                command=lambda value=group: self.set_core_group(value))
+            button.grid(row=0, column=index, sticky="ew", padx=1, pady=2)
+            core_buttons.columnconfigure(index, weight=1)
+            self.core_group_buttons[group] = button
+        self.core_name_var = tk.StringVar(value="All core names")
+        self.core_name_button = ttk.Menubutton(self.core_filter_panel, textvariable=self.core_name_var)
+        self.core_name_menu = tk.Menu(self.core_name_button, tearoff=False, bg=PANEL_2, fg=TEXT,
+                                     activebackground=ACCENT, activeforeground=TEXT)
+        self.core_name_button.configure(menu=self.core_name_menu)
+        self.core_name_button.pack(fill=tk.X, pady=(4, 0))
+        self.core_name_checks = {}
+
         self.selection_note = tk.Label(
             sidebar,
             text="",
@@ -728,11 +731,11 @@ class ComparisonDashboard:
         )
         self.selection_note.pack(anchor="w", pady=(0, 8), before=list_shell)
 
-        chart_panel = tk.Frame(body, bg=PANEL, padx=12, pady=12)
+        chart_panel = tk.Frame(body, bg=PANEL, padx=6, pady=6)
         chart_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         self.figure = Figure(figsize=(11.5, 6.2), dpi=100, facecolor=PANEL)
         grid = self.figure.add_gridspec(
-            1, 2, width_ratios=(2.15, 1), left=0.09, right=0.96, top=0.86, bottom=0.16, wspace=0.6
+            1, 2, width_ratios=(2.15, 1), left=0.065, right=0.975, top=0.90, bottom=0.12, wspace=0.20
         )
         self.chart_grid = grid
         self.main_axis = self.figure.add_subplot(grid[0, 0])
@@ -766,10 +769,13 @@ class ComparisonDashboard:
 
     def _make_stat_card(self, parent: tk.Frame, key: str, label: str, color: str) -> None:
         card = tk.Frame(parent, bg=PANEL, padx=16, pady=11, highlightthickness=1, highlightbackground=GRID)
-        card.pack(side=tk.LEFT, padx=(9, 0))
+        column = len(self.stat_values)
+        parent.columnconfigure(column, weight=1 if key == "leader" else 0,
+                               minsize=350 if key == "leader" else 0)
+        card.grid(row=0, column=column, sticky="nsew", padx=(9, 0))
         tk.Frame(card, bg=color, width=3, height=38).pack(side=tk.LEFT, padx=(0, 11))
         content = tk.Frame(card, bg=PANEL)
-        content.pack(side=tk.LEFT)
+        content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         tk.Label(
             content,
             text=label,
@@ -784,7 +790,11 @@ class ComparisonDashboard:
             fg=TEXT,
             font=("Segoe UI Semibold", 13),
         )
-        value.pack(anchor="w")
+        value.configure(anchor="w", justify=tk.LEFT)
+        value.pack(anchor="w", fill=tk.X)
+        if key == "leader":
+            value.configure(wraplength=340)
+            card.bind("<Configure>", lambda event: value.configure(wraplength=max(220, event.width - 64)))
         self.stat_values[key] = value
 
     def reload_data(self, initial_dataset: str | None = None) -> None:
@@ -817,22 +827,96 @@ class ComparisonDashboard:
         self.title_label.configure(text=definition.title)
         self.view_combo.configure(values=definition.views)
         self.view_var.set(definition.views[0])
-        self.search_var.set("")
+        self.selection_modes.setdefault(key, "top5" if choose_defaults else "manual")
         self.selected.setdefault(key, set())
+        self._sync_core_filters()
+        self.search_var.set("")
         if key not in self.collections:
             self.visible_labels = []
             self.profile_list.delete(0, tk.END)
             self._draw_unavailable_dataset(definition)
             return
-        if choose_defaults and not self.selected.get(key):
-            self.selected[key] = set(self._ranked_labels(key)[:5])
+        self.refresh_profile_list()
+        self.draw_charts()
+
+    def _core_filtered_frame(self, key: str) -> pd.DataFrame:
+        frame = self.collections[key]
+        filters = self.core_filters.get(key, CoreFilter())
+        if "Core_Group" in frame and filters.groups:
+            frame = frame[frame["Core_Group"].isin(filters.groups)]
+        if "Core" in frame and filters.names:
+            frame = frame[frame["Core"].isin(filters.names)]
+        return frame
+
+    def _sync_core_filters(self) -> None:
+        frame = self.collections.get(self.dataset_key)
+        if frame is None or "Core_Group" not in frame:
+            self.core_filter_panel.pack_forget()
+            return
+        self.core_filter_panel.pack(fill=tk.X, pady=(0, 8), before=self.selection_note)
+        filters = self.core_filters.get(self.dataset_key, CoreFilter())
+        groups = set(frame["Core_Group"])
+        names = sorted(frame["Core"].dropna().unique(), key=str.casefold)
+        filters = CoreFilter(filters.groups & groups, filters.names & set(names))
+        self.core_filters[self.dataset_key] = filters
+        for value, button in self.core_group_buttons.items():
+            active = value in filters.groups if value else not filters.groups
+            button.configure(style="ActiveCore.TButton" if active else "Core.TButton")
+            button.state(["!disabled"] if not value or value in groups else ["disabled"])
+        self.core_name_menu.delete(0, tk.END)
+        self.core_name_checks = {name: tk.BooleanVar(value=name in filters.names) for name in names}
+        self.all_core_names_var = tk.BooleanVar(value=not filters.names)
+        self.core_name_menu.add_checkbutton(label="All core names", variable=self.all_core_names_var,
+                                           command=lambda: self.toggle_core_name(""))
+        self.core_name_menu.add_separator()
+        for name, variable in self.core_name_checks.items():
+            self.core_name_menu.add_checkbutton(label=name, variable=variable,
+                                               command=lambda chosen=name: self.toggle_core_name(chosen))
+        self.core_name_var.set(f"{len(filters.names)} core names selected" if filters.names else "All core names")
+
+    def set_core_group(self, group: str) -> None:
+        filters = self.core_filters.get(self.dataset_key, CoreFilter())
+        groups = filters.groups ^ {group} if group else frozenset()
+        self.core_filters[self.dataset_key] = CoreFilter(frozenset(groups), filters.names if group else frozenset())
+        self._sync_core_filters()
+        self.refresh_profile_list()
+        self.draw_charts()
+
+    def toggle_core_name(self, name: str) -> None:
+        filters = self.core_filters.get(self.dataset_key, CoreFilter())
+        names = filters.names ^ {name} if name else frozenset()
+        self.core_filters[self.dataset_key] = CoreFilter(filters.groups, frozenset(names))
+        self._sync_core_filters()
+        self.refresh_profile_list()
+        self.draw_charts()
+
+    def _apply_selection_mode(self) -> None:
+        mode = self.selection_modes.get(self.dataset_key, "manual")
+        if mode in {"top5", "all"}:
+            labels = self.visible_labels
+            if mode == "top5":
+                visible = set(labels)
+                labels = [label for label in self._ranked_labels(self.dataset_key) if label in visible][:5]
+            self.selected[self.dataset_key] = set(labels)
+        elif mode == "clear":
+            self.selected[self.dataset_key] = set()
+        for name, button in self.selection_buttons.items():
+            button.configure(style="ActiveMaster.TButton" if name == mode else "Compact.TButton")
+
+    def on_search_change(self, *_args) -> None:
+        self.refresh_profile_list()
+        self.draw_charts()
+
+    def on_view_change(self, _event=None) -> None:
         self.refresh_profile_list()
         self.draw_charts()
 
     def _ranked_labels(self, key: str) -> list[str]:
-        frame = self.collections[key]
+        frame = self._core_filtered_frame(key)
         if key in CURVE_DATASETS:
-            metric = "Efficiency" if key in CPU_DATASETS else DATASET_DEFINITIONS[key].score_column
+            definition = DATASET_DEFINITIONS[key]
+            view = self.view_var.get() if key == self.dataset_key and hasattr(self, "view_var") else definition.views[0]
+            metric = definition.score_column if view == "Performance curve" else "Efficiency"
             ranking = (
                 frame.groupby("__label", sort=False)[metric]
                 .max()
@@ -850,10 +934,11 @@ class ComparisonDashboard:
             return
         needle = self.search_var.get().strip().casefold()
         labels = sorted(
-            self.collections[self.dataset_key]["__label"].dropna().unique(),
+            self._core_filtered_frame(self.dataset_key)["__label"].dropna().unique(),
             key=str.casefold,
         )
         self.visible_labels = [label for label in labels if needle in label.casefold()]
+        self._apply_selection_mode()
         chosen = self.selected.setdefault(self.dataset_key, set())
         self.profile_list.delete(0, tk.END)
         for index, label in enumerate(self.visible_labels):
@@ -863,6 +948,8 @@ class ComparisonDashboard:
         self._update_selection_note()
 
     def on_profile_select(self, _event=None) -> None:
+        self.selection_modes[self.dataset_key] = "manual"
+        self._apply_selection_mode()
         chosen_visible = {self.visible_labels[index] for index in self.profile_list.curselection()}
         visible_set = set(self.visible_labels)
         self.selected[self.dataset_key] = (
@@ -871,31 +958,31 @@ class ComparisonDashboard:
         self.draw_charts()
 
     def select_visible(self) -> None:
-        self.selected.setdefault(self.dataset_key, set()).update(self.visible_labels)
+        self.selection_modes[self.dataset_key] = "all"
         self.refresh_profile_list()
         self.draw_charts()
 
     def select_top_five(self) -> None:
         if self.dataset_key not in self.collections:
             return
-        self.selected[self.dataset_key] = set(self._ranked_labels(self.dataset_key)[:5])
+        self.selection_modes[self.dataset_key] = "top5"
         self.refresh_profile_list()
         self.draw_charts()
 
     def clear_selection(self) -> None:
-        self.selected[self.dataset_key] = set()
+        self.selection_modes[self.dataset_key] = "clear"
         self.refresh_profile_list()
         self.draw_charts()
 
     def _selected_frame(self) -> pd.DataFrame:
-        frame = self.collections[self.dataset_key]
+        frame = self._core_filtered_frame(self.dataset_key)
         labels = self.selected.get(self.dataset_key, set())
         return frame[frame["__label"].isin(labels)].copy()
 
     def _style_axis(self, axis, title: str, subtitle: str = "") -> None:
         axis.clear()
         axis.set_facecolor(PLOT_BG)
-        axis.set_title(title, loc="left", color=TEXT, fontsize=14, fontweight="bold", pad=18)
+        axis.set_title(title, loc="left", color=TEXT, fontsize=14, fontweight="bold", pad=14)
         if subtitle:
             axis.text(
                 0,
@@ -906,7 +993,7 @@ class ComparisonDashboard:
                 fontsize=9,
                 va="bottom",
             )
-        axis.tick_params(colors=MUTED, labelsize=9, length=0, pad=7)
+        axis.tick_params(colors=MUTED, labelsize=9, length=0, pad=4)
         for spine in axis.spines.values():
             spine.set_visible(False)
         axis.grid(True, color=GRID, linewidth=0.8, alpha=0.75)
@@ -919,7 +1006,7 @@ class ComparisonDashboard:
     def _on_chart_resize(self, event) -> None:
         # Reserve pixels for titles and units, even when the window is short.
         height = max(event.height, 200)
-        self.chart_grid.update(top=1 - 58 / height, bottom=72 / height)
+        self.chart_grid.update(top=1 - 46 / height, bottom=54 / height)
         self.canvas.draw_idle()
 
     def draw_charts(self) -> None:
@@ -1071,12 +1158,12 @@ class ComparisonDashboard:
         self._style_axis(
             self.main_axis,
             chart_title,
-            f"{len(self.selected[kind])} profiles · move near a point to inspect",
+            f"{frame['__label'].nunique()} profiles · move near a point to inspect",
         )
-        self.main_axis.set_xlabel(x_label, labelpad=10)
-        self.main_axis.set_ylabel(y_label, labelpad=10)
+        self.main_axis.set_xlabel(x_label, labelpad=6)
+        self.main_axis.set_ylabel(y_label, labelpad=6)
 
-        labels = sorted(self.selected[kind], key=str.casefold)
+        labels = sorted(frame["__label"].unique(), key=str.casefold)
         for index, label in enumerate(labels):
             subset = frame[frame["__label"] == label].sort_values(x_column)
             color = PALETTE[index % len(PALETTE)]
@@ -1085,13 +1172,16 @@ class ComparisonDashboard:
             ):
                 source_frame = source_frame.sort_values(x_column)
                 has_curve = len(source_frame) >= 4
-                legend_label = label if source_index == 0 else "_nolegend_"
-                if has_curve:
+                dotted = kind in {"SPEC INT", "SPEC FP"} and 1 < len(source_frame) < 4
+                has_line = has_curve or dotted
+                legend_label = self._legend_label(label) if source_index == 0 else "_nolegend_"
+                if has_line:
                     (line,) = self.main_axis.plot(
                         source_frame[x_column],
                         source_frame[y_column],
                         color=color,
-                        linewidth=2.4,
+                        linewidth=1.8 if dotted else 2.4,
+                        linestyle=":" if dotted else "-",
                         alpha=0.94 if source_index == 0 else 0.5,
                         solid_capstyle="round",
                         label=legend_label,
@@ -1109,7 +1199,7 @@ class ComparisonDashboard:
                     edgecolors="none" if has_curve else TEXT,
                     linewidths=0 if has_curve else 0.9,
                     zorder=3 if has_curve else 5,
-                    label="_nolegend_" if has_curve else legend_label,
+                    label="_nolegend_" if has_line else legend_label,
                     picker=True,
                 )
                 points._socpk_label = label
@@ -1151,7 +1241,8 @@ class ComparisonDashboard:
             .max()
         )
         self._draw_ranking(ranking, rank_label, higher_is_better=True)
-        self.chart_note.configure(text=f"{len(frame):,} curve points shown")
+        note = " · dotted lines join sparse samples" if kind in {"SPEC INT", "SPEC FP"} else ""
+        self.chart_note.configure(text=f"{len(frame):,} curve points shown{note}")
 
     def _draw_battery_charts(self, frame: pd.DataFrame) -> None:
         view = self.view_var.get()
@@ -1212,8 +1303,8 @@ class ComparisonDashboard:
             title,
             f"{len(summary)} device profiles · {interaction_note}",
         )
-        self.main_axis.set_xlabel(x_label, labelpad=10)
-        self.main_axis.set_ylabel(y_label, labelpad=10)
+        self.main_axis.set_xlabel(x_label, labelpad=6)
+        self.main_axis.set_ylabel(y_label, labelpad=6)
         for _, row in summary.iterrows():
             label = row["__label"]
             color = color_map[label]
@@ -1369,11 +1460,9 @@ class ComparisonDashboard:
             "Ranking",
             f"{direction} · {range_note}",
         )
-        short_labels = [self._ranking_label(label) for label in values.index]
-        selected_labels = sorted(
-            self.selected.get(self.dataset_key, set()),
-            key=str.casefold,
-        )
+        label_width = max(16, int(self.rank_axis.get_window_extent().width / 5.5))
+        short_labels = [self._short_label(self._legend_label(label), label_width) for label in values.index]
+        selected_labels = sorted(self.ranking_values.index, key=str.casefold)
         color_map = {
             label: PALETTE[index % len(PALETTE)]
             for index, label in enumerate(selected_labels)
@@ -1384,11 +1473,14 @@ class ComparisonDashboard:
             row_positions,
             values.values,
             color=colors,
-            height=0.58,
+            height=0.40,
             alpha=0.9,
         )
-        self.rank_axis.set_yticks(row_positions, labels=short_labels)
-        self.rank_axis.set_xlabel(self.ranking_metric_label, labelpad=10)
+        self.rank_axis.set_yticks([])
+        self.rank_axis.set_ylim(-0.5, max(len(values) - 0.25, 0.75))
+        for position, label in zip(row_positions, short_labels):
+            self.rank_axis.text(0, position + 0.24, label, ha="left", va="bottom", color=TEXT, fontsize=8)
+        self.rank_axis.set_xlabel(self.ranking_metric_label, labelpad=6)
         self.rank_axis.grid(axis="y", visible=False)
         maximum = float(self.ranking_values.max()) if total else 0.0
         span = max(maximum, 1.0)
@@ -1452,7 +1544,7 @@ class ComparisonDashboard:
 
     def _update_stats(self, frame: pd.DataFrame) -> None:
         all_frame = self.collections[self.dataset_key]
-        selected_count = len(self.selected.get(self.dataset_key, set()))
+        selected_count = frame["__label"].nunique()
         self.stat_values["profiles"].configure(
             text=f"{selected_count} / {all_frame['__label'].nunique()}"
         )
@@ -1471,8 +1563,7 @@ class ComparisonDashboard:
             }[self.view_var.get()]
             grouped = frame.groupby("__label")[metric].mean()
             leader = grouped.idxmin() if metric == "avgPowerW" else grouped.idxmax()
-        leader_text = (self._ranking_label(str(leader)) if self.dataset_key in {"SPEC INT", "SPEC FP"}
-                       else self._short_label(str(leader), 25))
+        leader_text = self._leader_label(str(leader), frame)
         self.stat_values["leader"].configure(text=leader_text)
 
         source_count = all_frame["__source"].nunique()
@@ -1484,7 +1575,8 @@ class ComparisonDashboard:
     def _update_selection_note(self) -> None:
         if not self.dataset_key:
             return
-        selected_count = len(self.selected.get(self.dataset_key, set()))
+        selected_count = (self._selected_frame()["__label"].nunique()
+                          if self.dataset_key in self.collections else 0)
         shown = len(self.visible_labels)
         total = (
             self.collections[self.dataset_key]["__label"].nunique()
@@ -1642,6 +1734,24 @@ class ComparisonDashboard:
             self.chart_note.configure(text=f"Exported {Path(path).name}")
         except Exception as exc:
             messagebox.showerror("Export failed", str(exc), parent=self.root)
+
+    @staticmethod
+    def _leader_label(label: str, frame: pd.DataFrame) -> str:
+        matches = frame[frame["__label"].eq(label)]
+        if matches.empty or "Core" not in matches:
+            return label
+        row = matches.iloc[0]
+        parts = [str(row["Core"]), str(row["Core_Group"]).capitalize()]
+        variant = row.get("Core_Variant", "")
+        if pd.notna(variant) and variant:
+            parts.append({"p": "P-core", "e": "E-core"}.get(str(variant), str(variant)))
+        return f"{row['CPU']}\n" + " · ".join(parts)
+
+    def _legend_label(self, label: str) -> str:
+        if self.dataset_key in {"SPEC INT", "SPEC FP"} and " — " in label:
+            chip, core = label.split(" — ", 1)
+            return f"{chip} — {core.split(' · ', 1)[0]}"
+        return label
 
     def _ranking_label(self, label: str) -> str:
         if self.dataset_key in {"SPEC INT", "SPEC FP"} and " — " in label:

@@ -17,10 +17,81 @@ from socpk_gui import (
     load_collections,
     ComparisonDashboard,
     DATASET_DEFINITIONS,
+    CoreFilter,
 )
 
 
 class DashboardDataTests(unittest.TestCase):
+    def test_leader_keeps_full_name_and_core_type(self):
+        label = "Snapdragon 8 Elite Gen 5 — Oryon V3 M · medium · e"
+        frame = pd.DataFrame({"__label": [label], "CPU": ["Snapdragon 8 Elite Gen 5"],
+                              "Core": ["Oryon V3 M"], "Core_Group": ["medium"], "Core_Variant": ["e"]})
+        self.assertEqual(ComparisonDashboard._leader_label(label, frame),
+                         "Snapdragon 8 Elite Gen 5\nOryon V3 M · Medium · E-core")
+        self.assertEqual(ComparisonDashboard._leader_label(label, frame.iloc[:0]), label)
+
+    def test_core_filter_scopes_chart_and_top_five_without_losing_other_selections(self):
+        dashboard = ComparisonDashboard.__new__(ComparisonDashboard)
+        dashboard.dataset_key = "SPEC INT"
+        frame = pd.DataFrame({"__label": ["Chip P", "Chip E", "Other E"],
+                              "Core": ["Everest", "Sawtooth", "Cortex-A720"],
+                              "Core_Group": ["super", "medium", "medium"],
+                              "Efficiency": [100., 10., 20.]})
+        dashboard.collections = {"SPEC INT": frame, "CPU GB7": frame.drop(columns=["Core", "Core_Group"])}
+        dashboard.selected = {"SPEC INT": set(frame["__label"])}
+        dashboard.core_filters = {"SPEC INT": CoreFilter(frozenset({"medium"}))}
+        dashboard.selection_modes = {"SPEC INT": "manual"}
+        dashboard.selection_buttons = {}
+        self.assertEqual(set(dashboard._selected_frame()["__label"]), {"Chip E", "Other E"})
+        self.assertEqual(dashboard._ranked_labels("SPEC INT"), ["Other E", "Chip E"])
+        self.assertIn("Chip P", dashboard.selected["SPEC INT"])
+        dashboard.visible_labels = ["Chip E"]  # Search narrows the group further.
+        dashboard.refresh_profile_list, dashboard.draw_charts = dashboard._apply_selection_mode, Mock()
+        dashboard.select_top_five()
+        self.assertEqual(dashboard.selected["SPEC INT"], {"Chip E"})
+        dashboard.core_filters["SPEC INT"] = CoreFilter(frozenset({"medium"}), frozenset({"Cortex-A720"}))
+        self.assertEqual(dashboard._core_filtered_frame("SPEC INT")["__label"].tolist(), ["Other E"])
+        self.assertEqual(len(dashboard._core_filtered_frame("CPU GB7")), 3)
+
+    def test_multiselect_groups_names_and_latched_selection_modes(self):
+        dashboard = ComparisonDashboard.__new__(ComparisonDashboard)
+        dashboard.dataset_key = "SPEC INT"
+        frame = pd.DataFrame({"__label": [f"Chip {i}" for i in range(8)],
+                              "Core_Group": ["super"] * 3 + ["medium"] * 3 + ["small"] * 2,
+                              "Core": ["Core A", "Core B"] * 4,
+                              "Efficiency": list(range(8)), "SPEC2026_INT_Score": list(range(8, 0, -1))})
+        dashboard.collections = {"SPEC INT": frame}
+        dashboard.selected = {"SPEC INT": set()}
+        dashboard.selection_modes = {"SPEC INT": "top5"}
+        dashboard.selection_buttons = {}
+        dashboard.core_filters = {}
+        dashboard._sync_core_filters, dashboard.draw_charts = Mock(), Mock()
+        def refresh():
+            dashboard.visible_labels = dashboard._core_filtered_frame("SPEC INT")["__label"].tolist()
+            dashboard._apply_selection_mode()
+        dashboard.refresh_profile_list = refresh
+        dashboard.set_core_group("super")
+        self.assertEqual(dashboard.selected["SPEC INT"], {"Chip 0", "Chip 1", "Chip 2"})
+        dashboard.set_core_group("medium")
+        self.assertEqual(dashboard.core_filters["SPEC INT"].groups, {"super", "medium"})
+        self.assertEqual(dashboard.selected["SPEC INT"], {f"Chip {i}" for i in range(1, 6)})
+        dashboard.select_visible()
+        self.assertEqual(len(dashboard.selected["SPEC INT"]), 6)
+        dashboard.toggle_core_name("Core A")
+        self.assertEqual(dashboard.selected["SPEC INT"], {"Chip 0", "Chip 2", "Chip 4"})
+        dashboard.toggle_core_name("Core B")
+        self.assertEqual(len(dashboard.selected["SPEC INT"]), 6)
+        dashboard.set_core_group("super")  # Toggle one group off; All shown stays latched.
+        self.assertEqual(dashboard.selected["SPEC INT"], {"Chip 3", "Chip 4", "Chip 5"})
+        dashboard.clear_selection()
+        dashboard.set_core_group("")
+        self.assertEqual(dashboard.selected["SPEC INT"], set())
+        dashboard.select_top_five()
+        dashboard.view_var = Mock()
+        dashboard.view_var.get.return_value = "Performance curve"
+        dashboard.on_view_change()
+        self.assertEqual(dashboard.selected["SPEC INT"], {f"Chip {i}" for i in range(5)})
+
     def test_new_cpu_schemas_keep_benchmarks_and_core_groups_separate(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -90,6 +161,14 @@ class DashboardDataTests(unittest.TestCase):
                     if benchmark.single_core:
                         self.assertIn("1.235", dashboard.hover_points[0].details)
                         self.assertIn("Unknown", dashboard._ranking_label(next(iter(dashboard.selected[kind]))))
+                        lines = [line for line in dashboard.main_axis.lines if hasattr(line, "_socpk_label")]
+                        self.assertEqual(len(lines), 2)
+                        for line in lines:
+                            self.assertEqual(line.get_linestyle(), ":")
+                            self.assertEqual(len(line.get_xdata()), 2)
+                        for text in dashboard.main_axis.get_legend().get_texts():
+                            self.assertNotIn("large", text.get_text())
+                            self.assertNotIn("small", text.get_text())
                     dashboard.figure.savefig(root / f"{name}-{view}.png")
 
     def test_adds_geekerwan_capacity_overlay_without_replacing_source_data(self) -> None:
