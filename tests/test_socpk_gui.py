@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from unittest.mock import Mock
 from pathlib import Path
@@ -14,6 +15,7 @@ from socpk_gui import (
     add_geekerwan_capacity_overlay,
     classify_columns,
     collection_summary,
+    discover_csv_files,
     load_collections,
     ComparisonDashboard,
     DATASET_DEFINITIONS,
@@ -23,6 +25,16 @@ from socpk_gui import (
 
 
 class DashboardDataTests(unittest.TestCase):
+    def test_auto_discovery_uses_newest_timestamped_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = root / "battery_results.csv"
+            latest = root / "battery_results_20260919T021848984043Z_1.csv"
+            original.write_text("old")
+            time.sleep(0.002)
+            latest.write_text("new")
+            self.assertEqual(discover_csv_files(root), [latest])
+
     def test_leader_keeps_full_name_and_core_type(self):
         label = "Snapdragon 8 Elite Gen 5 — Oryon V3 M · medium · e"
         frame = pd.DataFrame({"__label": [label], "CPU": ["Snapdragon 8 Elite Gen 5"],

@@ -26,6 +26,14 @@ GPU_PAGE_SLUG = "mobile-soc-efficiency-snl"
 LAPTOP_GPU_PAGE_SLUG = "laptop-gpu-efficiency"
 BATTERY_PAGE_SLUG = "battery-life-5-0"
 
+# SoCPK occasionally publishes a new battery-test runtime before adding the
+# device's rated energy. These physical-SIM capacities match both Apple's EU
+# product sheets (mAh) and the Chinese CQC battery registrations (Wh).
+BATTERY_CAPACITY_FALLBACKS = {
+    ("苹果", "iphone 18 pro"): {"ratedEnergyWh": 15.855, "battery_mAh": 4056},
+    ("苹果", "iphone 18 pro max"): {"ratedEnergyWh": 21.063, "battery_mAh": 5391},
+}
+
 _USER_AGENT = "Mozilla/5.0 (SoCPK parser)"
 
 
@@ -96,10 +104,12 @@ def decode_chart_blob(encoded: str) -> float | list:
 def fetch_chart_page(
     slug: str, root_url: str = SOCPK_ROOT, timeout: float = 30.0,
 ) -> dict[str, Any]:
-    """Fetch metadata and public chart data, refreshing stale tokens once.
+    """Fetch metadata and public chart data, retrying stale responses once.
 
-    Tokens and data are deliberately not cached between polls. The two GETs
-    follow the site's own client, including its data-version consistency check.
+    The current site serves the data endpoint without a token. Older deployments
+    supplied a public token in the metadata, so retain support for that handshake
+    while following the current client when the token fields are absent. The two
+    GETs are not cached between polls and their data versions must agree.
     """
     page_url = urljoin(root_url, f"/api/pages/{slug}")
     with requests.Session() as session:
@@ -111,16 +121,18 @@ def fetch_chart_page(
             page = response.json()
             if not isinstance(page, dict) or not isinstance(page.get("series"), list):
                 raise ValueError(f"Invalid SoCPK page: {slug}.")
-            if not page.get("dataToken") or not page.get("dataExp"):
-                if all("points" in series for series in page["series"]):
-                    return page
-                raise ValueError(f"Missing SoCPK chart token: {slug}.")
-            if attempt == 0 and page["dataExp"] <= time.time() + 10:
+            if all("points" in series for series in page["series"]):
+                return page
+            token = page.get("dataToken")
+            expiration = page.get("dataExp")
+            if token and expiration and attempt == 0 and expiration <= time.time() + 10:
                 continue
-            response = session.get(
-                page_url + "/data", params=params, timeout=timeout,
-                headers={"X-Chart-Token": f"{page['dataExp']}.{page['dataToken']}"},
-            )
+            data_kwargs: dict[str, Any] = {"params": params, "timeout": timeout}
+            if token and expiration:
+                data_kwargs["headers"] = {
+                    "X-Chart-Token": f"{expiration}.{token}",
+                }
+            response = session.get(page_url + "/data", **data_kwargs)
             if response.status_code == 403 and attempt == 0:
                 continue
             response.raise_for_status()
@@ -232,6 +244,14 @@ def curve_frame(series, id_column: str | None, score_column: str):
     return pd.DataFrame(columns)
 
 
+def battery_capacity_fallback(brand: str, model: str) -> dict[str, float | int]:
+    """Return a narrowly scoped regulatory capacity fallback for a device."""
+    return BATTERY_CAPACITY_FALLBACKS.get(
+        (str(brand).strip(), str(model).strip().casefold()),
+        {},
+    )
+
+
 def battery_rows_from_page(page: dict[str, Any]) -> list[list]:
     """Adapt API battery metadata and runtime to the legacy seven-column rows."""
     if page.get("type") != "bar-chart" or page.get("config", {}).get("unit") != "min":
@@ -239,17 +259,19 @@ def battery_rows_from_page(page: dict[str, Any]) -> list[list]:
     rows = []
     for series in page["series"]:
         meta = series.get("meta", {})
-        minutes = series.get("points")
-        if isinstance(minutes, list):
-            minutes = minutes[0] if minutes else None
-        capacity = meta.get("ratedEnergyWh")
-        if not all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0
-                   for v in (minutes, capacity)):
-            continue
         brand = series.get("group", "")
         model = series["name"]
         if brand and model.casefold().startswith(brand.casefold() + " "):
             model = model[len(brand):].strip()
+        minutes = series.get("points")
+        if isinstance(minutes, list):
+            minutes = minutes[0] if minutes else None
+        capacity = meta.get("ratedEnergyWh")
+        if not isinstance(capacity, (int, float)) or not math.isfinite(capacity) or capacity <= 0:
+            capacity = battery_capacity_fallback(brand, model).get("ratedEnergyWh")
+        if not all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0
+                   for v in (minutes, capacity)):
+            continue
         # Remove codec quantization noise from runtime in minutes.
         rows.append([brand, model, round(minutes, 3), meta.get("systemVersion", ""), "",
                      capacity, meta.get("videoUrl", "")])

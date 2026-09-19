@@ -90,6 +90,17 @@ class ChartApiTests(unittest.TestCase):
         self.assertEqual(call.args[0], "https://www.socpk.com/api/pages/test/data")
         self.assertEqual(call.kwargs["headers"], {"X-Chart-Token": "2000.public-token"})
 
+    def test_fetches_current_public_data_without_token(self):
+        metadata = page()
+        metadata.pop("dataToken")
+        metadata.pop("dataExp")
+        self.session.get.side_effect = [response(metadata), response(chart_data())]
+        result = fetch_chart_page("test")
+        self.assertEqual(result["series"][0]["points"], LINE_POINTS)
+        call = self.session.get.call_args_list[1]
+        self.assertEqual(call.args[0], "https://www.socpk.com/api/pages/test/data")
+        self.assertNotIn("headers", call.kwargs)
+
     def test_refreshes_expiring_token_without_fetching_stale_data(self):
         expired = {**page(), "dataExp": 1005}
         self.session.get.side_effect = [response(expired), response(page()), response(chart_data())]
@@ -167,6 +178,21 @@ class BatteryApiTests(unittest.TestCase):
         metadata["series"][0]["meta"].pop("ratedEnergyWh")
         with self.assertRaises(ValueError):
             battery_rows_from_page(metadata)
+
+    def test_uses_regulatory_iphone_18_capacity_when_socpk_omits_it(self):
+        metadata = {
+            "type": "bar-chart", "config": {"unit": "min"},
+            "series": [
+                {"group": "苹果", "name": model, "points": minutes,
+                 "meta": {"systemVersion": "iOS 27"}}
+                for model, minutes in (("iPhone 18 Pro", 470),
+                                       ("iPhone 18 Pro Max", 637))
+            ],
+        }
+        rows = battery_rows_from_page(metadata)
+        self.assertEqual([row[5] for row in rows], [15.855, 21.063])
+        records = battery_parser.rows_to_records(rows, "en")
+        self.assertEqual([record["battery_mAh"] for record in records], [4056, 5391])
 
 
 class SnapshotTests(unittest.TestCase):

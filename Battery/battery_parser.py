@@ -48,6 +48,7 @@ from socpk_client import (  # noqa: E402
     RANKINGS_PAYLOAD_KEY,
     decode_embedded_payload,
     BATTERY_PAGE_SLUG,
+    battery_capacity_fallback,
     fetch_chart_page,
     battery_rows_from_page,
     new_snapshot,
@@ -369,6 +370,7 @@ def rows_to_records(arr, brand_lang: str) -> List[Dict]:
         avgPowerW = capacityWh * 60.0 / minutes     # lower is better
         minPerWh  = minutes / capacityWh            # higher is better
 
+        fallback = battery_capacity_fallback(brand_src, model)
         out.append({
             "brand": brand, "model": model, "os": osver,
             "minutes": minutes, "hours": minutes/60.0,
@@ -376,6 +378,7 @@ def rows_to_records(arr, brand_lang: str) -> List[Dict]:
             "avgPowerW": avgPowerW,
             "avgPowermW": avgPowerW*1000.0,
             "minPerWh": minPerWh,
+            "battery_mAh": fallback.get("battery_mAh"),
             "url": url,
             # deltas (filled later)
             "delta_vs_best_power_pct": None,

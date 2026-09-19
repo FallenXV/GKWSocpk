@@ -5,10 +5,49 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
+import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+
+
+def _ensure_macos_tk() -> None:
+    """Relaunch with uv's Tk-enabled Python when Homebrew omitted Tk."""
+    try:
+        import _tkinter  # noqa: F401
+        return
+    except ModuleNotFoundError:
+        if sys.platform != "darwin":
+            return
+
+    if os.environ.get("SOCPK_TK_BOOTSTRAPPED") == "1":
+        raise SystemExit(
+            "Tk is unavailable in the selected macOS Python. Install a Python "
+            "distribution with Tk support or run: uv run --python 3.10 "
+            "--with-requirements requirements.txt python socpk_gui.py"
+        )
+    uv = shutil.which("uv")
+    if not uv:
+        raise SystemExit(
+            "This macOS Python does not include Tk. Install uv (https://docs.astral.sh/uv/) "
+            "and rerun this command, or install the matching Homebrew python-tk package."
+        )
+
+    project_root = Path(__file__).resolve().parent
+    environment = os.environ.copy()
+    environment["SOCPK_TK_BOOTSTRAPPED"] = "1"
+    command = [
+        uv, "run", "--python", "3.10", "--with-requirements",
+        str(project_root / "requirements.txt"), "python",
+        str(Path(__file__).resolve()), *sys.argv[1:],
+    ]
+    os.execvpe(uv, command, environment)
+
+
+_ensure_macos_tk()
 
 from cpu_benchmarks import CPU_BENCHMARKS, CORE_COLUMNS, cpu_profile_label
 
@@ -18,6 +57,9 @@ import pandas as pd
 
 matplotlib.use("TkAgg")
 matplotlib.rcParams["font.sans-serif"] = [
+    "Arial Unicode MS",
+    "PingFang SC",
+    "Heiti SC",
     "Microsoft YaHei",
     "Noto Sans CJK SC",
     "Segoe UI",
@@ -329,14 +371,26 @@ def classify_frame(frame: pd.DataFrame, path: Path) -> str | None:
 
 
 def discover_csv_files(root: Path) -> list[Path]:
-    """Find project CSVs, excluding virtual environments and tool metadata."""
+    """Find project CSVs, keeping only the newest file in a snapshot family."""
     ignored = {".git", ".venv", "venv", "__pycache__", ".idea", ".pytest_cache"}
     files: list[Path] = []
     for path in root.rglob("*.csv"):
         if any(part in ignored for part in path.relative_to(root).parts):
             continue
         files.append(path)
-    return sorted(files, key=lambda item: str(item).casefold())
+
+    # new_snapshot() appends this suffix rather than overwriting prior data.
+    # Group those siblings so automatic discovery loads the newest snapshot,
+    # instead of merging an older canonical file first.
+    suffix = re.compile(r"_\d{8}T\d{12}Z_\d+$")
+    newest: dict[Path, Path] = {}
+    for path in files:
+        family_stem = suffix.sub("", path.stem)
+        family = path.with_name(family_stem + path.suffix)
+        incumbent = newest.get(family)
+        if incumbent is None or path.stat().st_mtime_ns > incumbent.stat().st_mtime_ns:
+            newest[family] = path
+    return sorted(newest.values(), key=lambda item: str(item).casefold())
 
 
 def _source_label(path: Path, root: Path) -> str:

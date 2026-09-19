@@ -38,11 +38,11 @@ python "Performance Benchmark\gpu_curve_parser.py"
 python "Performance Benchmark\laptop_gpu_curve_parser.py"
 ```
 
-The parsers read SoCPK's September 2026 chart API, including its public chart
-tokens and binary point format. No browser or extra dependencies are required.
-Each poll fetches fresh data and retries once if a token expires or the chart
-changes between requests. Legacy battery JS sources and explicitly supplied
-SVG base URLs also work.
+The parsers read SoCPK's September 2026 chart API, including its binary point
+format and both current tokenless and legacy token-protected data responses. No
+browser or extra dependencies are required. Each poll fetches fresh data and
+retries once if a legacy token expires or the chart changes between requests.
+Legacy battery JS sources and explicitly supplied SVG base URLs also work.
 
 Exports go to `snapshots/` relative to the working directory:
 
@@ -110,8 +110,15 @@ Pearson correlations against efficiency.
 python socpk_gui.py
 ```
 
+On macOS, the launcher detects Python installations that omit Tk (including
+the default Homebrew configuration). If `uv` is available, it automatically
+relaunches with a user-local Tk-enabled Python and the declared requirements;
+no system Python changes are needed. Without `uv`, install it or install the
+Homebrew `python-tk` formula matching your Python version.
+
 The dashboard scans the project folder for recognized CPU, GPU, and battery
-CSVs and merges them. Tabs switch datasets: GB6 MULTI, GB7 MULTI, SPEC26 INT,
+CSVs. Timestamped siblings are treated as one snapshot family and only the
+newest is loaded automatically. Tabs switch datasets: GB6 MULTI, GB7 MULTI, SPEC26 INT,
 SPEC26 FP, GPU, LAPTOP GPU, and BATTERY. Rankings and comparisons stay within
 the selected tab. Curve tabs chart an efficiency curve, a performance curve,
 or efficiency vs score; battery tabs chart runtime vs capacity, energy
