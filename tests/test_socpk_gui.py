@@ -13,6 +13,7 @@ from cpu_benchmarks import CPU_BENCHMARKS
 
 from socpk_gui import (
     add_geekerwan_capacity_overlay,
+    add_soc_average_columns,
     classify_columns,
     collection_summary,
     discover_csv_files,
@@ -235,6 +236,27 @@ class DashboardDataTests(unittest.TestCase):
                             self.assertNotIn("small", text.get_text())
                     dashboard.figure.savefig(root / f"{name}-{view}.png")
 
+    def test_ranking_scrollbar_handles_dragging_and_fractional_wheel_steps(self):
+        dashboard = ComparisonDashboard.__new__(ComparisonDashboard)
+        dashboard.ranking_values = pd.Series(
+            range(20), index=[f"Chip {index}" for index in range(20)], dtype=float
+        )
+        dashboard.ranking_page_size = 9
+        dashboard.ranking_offset = 0
+        dashboard._render_ranking = Mock()
+        dashboard.canvas = Mock()
+
+        dashboard.on_ranking_scrollbar("moveto", "0.5")
+        self.assertEqual(dashboard.ranking_offset, 10)
+        dashboard.on_ranking_scrollbar("scroll", "-1", "pages")
+        self.assertEqual(dashboard.ranking_offset, 1)
+
+        dashboard.ranking_offset = 10
+        event = Mock(inaxes=object(), step=0.25, button=None)
+        dashboard.rank_axis = event.inaxes
+        dashboard.on_ranking_scroll(event)
+        self.assertEqual(dashboard.ranking_offset, 9)
+
     def test_adds_geekerwan_capacity_overlay_without_replacing_source_data(self) -> None:
         source = pd.DataFrame(
             {
@@ -257,6 +279,71 @@ class DashboardDataTests(unittest.TestCase):
         self.assertEqual(overlaid.loc[0, "capacityWh"], source.loc[0, "capacityWh"])
         self.assertEqual(overlaid.loc[1, "geekerwanShortfallMah"], 225)
         self.assertTrue(pd.isna(overlaid.loc[2, "geekerwanMeasuredMah"]))
+
+    def test_precomputes_and_draws_processor_averages(self) -> None:
+        source = pd.DataFrame(
+            {
+                "__label": ["Phone A", "Phone B", "Phone C"],
+                "brand": ["Example"] * 3,
+                "model": ["A", "B", "C"],
+                "minutes": [600.0, 720.0, 540.0],
+                "hours": [10.0, 12.0, 9.0],
+                "capacityWh": [20.0, 24.0, 18.0],
+                "avgPowerW": [2.0, 3.0, 2.0],
+                "minPerWh": [30.0, 24.0, 30.0],
+                "soc": ["Qualcomm SM8750 Snapdragon 8 Elite (3 nm)",
+                        "Snapdragon 8 Elite", "Apple A19 Pro (3 nm)"],
+            }
+        )
+        frame = add_soc_average_columns(add_geekerwan_capacity_overlay(source))
+        snapdragon = frame[frame["soc"] == "Snapdragon 8 Elite"]
+        self.assertTrue(snapdragon["soc_device_count"].eq(2).all())
+        self.assertTrue(snapdragon["soc_avg_capacity_wh"].eq(22.0).all())
+
+        dashboard = ComparisonDashboard.__new__(ComparisonDashboard)
+        dashboard.dataset_key = "Battery"
+        dashboard.figure = Figure(figsize=(12, 6))
+        FigureCanvasAgg(dashboard.figure)
+        dashboard.main_axis, dashboard.rank_axis = dashboard.figure.subplots(1, 2)
+        dashboard.ranking_page_size = 9
+        dashboard.chart_note = Mock()
+        dashboard.view_var = Mock()
+        dashboard.show_soc_averages_var = Mock(get=Mock(return_value=True))
+        expected = {
+            "Energy efficiency": {"Snapdragon 8 Elite average": 27.0, "Apple A19 Pro average": 30.0},
+            "Average power draw": {"Snapdragon 8 Elite average": 2.5, "Apple A19 Pro average": 2.0},
+        }
+        for view in expected:
+            dashboard.view_var.get.return_value = view
+            dashboard.hover_points, dashboard.line_artists = [], []
+            dashboard._draw_battery_charts(frame)
+
+            averages = [line for line in dashboard.main_axis.lines
+                        if getattr(line, "_socpk_label", "").split(":", 1)[0].endswith(" average")]
+            self.assertEqual(len(averages), 2)
+            for line in averages:
+                label = line._socpk_label.split(":", 1)[0]
+                self.assertEqual(list(line.get_ydata()), [expected[view][label]] * 2)
+            self.assertIn("2 devices", next(line._socpk_label for line in averages
+                                            if line._socpk_label.startswith("Snapdragon")))
+
+        dedicated = {
+            "SoC Average Power Draw": ("soc_avg_power_w", ["Apple A19 Pro", "Snapdragon 8 Elite"]),
+            "SoC Average Efficiency": ("soc_avg_min_per_wh", ["Apple A19 Pro", "Snapdragon 8 Elite"]),
+        }
+        for view, (metric, processor_names) in dedicated.items():
+            dashboard.view_var.get.return_value = view
+            dashboard.hover_points, dashboard.line_artists = [], []
+            dashboard._draw_battery_charts(frame)
+
+            self.assertEqual({point.label for point in dashboard.hover_points}, set(processor_names))
+            expected_values = frame.drop_duplicates("soc").set_index("soc")[metric]
+            pd.testing.assert_series_equal(
+                dashboard.ranking_values.sort_index(),
+                expected_values.sort_index(),
+                check_names=False,
+            )
+            self.assertIn("precomputed processor averages", dashboard.chart_note.configure.call_args.kwargs["text"])
 
     def test_classifies_all_supported_schemas(self) -> None:
         self.assertEqual(

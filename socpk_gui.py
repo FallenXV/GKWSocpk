@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import os
 import re
+import signal
 import shutil
 import sys
 from dataclasses import dataclass
@@ -39,8 +40,12 @@ def _ensure_macos_tk() -> None:
     project_root = Path(__file__).resolve().parent
     environment = os.environ.copy()
     environment["SOCPK_TK_BOOTSTRAPPED"] = "1"
+    # The GUI fallback must not resolve against PyPI at launch time.  The
+    # regular venv already contains the project dependencies; this command is
+    # only needed because Homebrew's Python may not ship with Tk.  uv can use
+    # its local package cache to provide the same dependencies to its Tk build.
     command = [
-        uv, "run", "--python", "3.10", "--with-requirements",
+        uv, "run", "--offline", "--python", "3.10", "--with-requirements",
         str(project_root / "requirements.txt"), "python",
         str(Path(__file__).resolve()), *sys.argv[1:],
     ]
@@ -50,6 +55,7 @@ def _ensure_macos_tk() -> None:
 _ensure_macos_tk()
 
 from cpu_benchmarks import CPU_BENCHMARKS, CORE_COLUMNS, cpu_profile_label
+from battery_soc import canonical_soc_name
 
 import matplotlib
 import numpy as np
@@ -104,6 +110,7 @@ PALETTE = (
     "#84dcc6",
     "#a9def9",
 )
+
 
 
 class AxisHeader(AnchoredOffsetbox):
@@ -269,6 +276,71 @@ def add_geekerwan_capacity_overlay(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
+SOC_AVERAGE_COLUMNS = (
+    "soc_device_count",
+    "soc_avg_capacity_wh",
+    "soc_avg_power_w",
+    "soc_avg_min_per_wh",
+    "soc_avg_runtime_hours",
+)
+
+SOC_AVERAGE_VIEWS = frozenset({"SoC Average Power Draw", "SoC Average Efficiency"})
+
+
+def add_soc_average_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalize SoC names and precompute one device-weighted average per processor."""
+    frame = frame.copy()
+    raw_soc = frame.get("soc", pd.Series("", index=frame.index)).fillna("").astype(str)
+    if "chipset" in frame:
+        chipset = frame["chipset"].fillna("").astype(str)
+        raw_soc = raw_soc.where(raw_soc.str.strip().ne(""), chipset)
+    frame["soc"] = raw_soc.map(canonical_soc_name)
+    frame = frame.drop(columns=[column for column in SOC_AVERAGE_COLUMNS if column in frame])
+
+    metrics = ["capacityWh", "avgPowerW", "minPerWh", "hours"]
+    profile_rows = []
+    for label, rows in frame.groupby("__label", sort=False):
+        socs = [value for value in rows["soc"] if value]
+        if not socs:
+            continue
+        profile_rows.append({
+            "__label": label,
+            "soc": socs[0],
+            **{metric: pd.to_numeric(rows[metric], errors="coerce").mean() for metric in metrics},
+        })
+    if not profile_rows:
+        for column in SOC_AVERAGE_COLUMNS:
+            frame[column] = np.nan
+        return frame
+
+    profiles = pd.DataFrame(profile_rows)
+    averages = (
+        profiles.groupby("soc", as_index=False)
+        .agg(
+            soc_device_count=("__label", "nunique"),
+            soc_avg_capacity_wh=("capacityWh", "mean"),
+            soc_avg_power_w=("avgPowerW", "mean"),
+            soc_avg_min_per_wh=("minPerWh", "mean"),
+            soc_avg_runtime_hours=("hours", "mean"),
+        )
+    )
+    return frame.merge(averages, on="soc", how="left")
+
+
+def soc_average_summary(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return one row per available precomputed processor average."""
+    if "soc" not in frame or any(column not in frame for column in SOC_AVERAGE_COLUMNS):
+        frame = add_soc_average_columns(frame)
+    columns = ["soc", *SOC_AVERAGE_COLUMNS]
+    available = frame[frame["soc"].fillna("").astype(str).str.strip().ne("")]
+    return (
+        available[columns]
+        .drop_duplicates("soc")
+        .sort_values("soc", key=lambda values: values.str.casefold())
+        .reset_index(drop=True)
+    )
+
+
 DATASET_DEFINITIONS = {
     **{
         benchmark.dataset_key: DatasetDefinition(
@@ -321,7 +393,13 @@ DATASET_DEFINITIONS = {
         required=frozenset({"brand", "model", "minutes", "capacityWh", "avgPowerW"}),
         numeric=("minutes", "hours", "capacityWh", "avgPowerW", "minPerWh"),
         dedupe=("brand", "model", "os", "minutes", "capacityWh"),
-        views=("Runtime vs capacity", "Energy efficiency", "Average power draw"),
+        views=(
+            "Runtime vs capacity",
+            "Energy efficiency",
+            "Average power draw",
+            "SoC Average Power Draw",
+            "SoC Average Efficiency",
+        ),
     ),
 }
 
@@ -500,6 +578,8 @@ def load_collections(
         subset = [column for column in definition.dedupe if column in merged]
         merged = merged.drop_duplicates(subset=subset, keep="first")
         merged = merged.sort_values(["__label"], kind="stable").reset_index(drop=True)
+        if kind == "Battery":
+            merged = add_soc_average_columns(merged)
         collections[kind] = merged
     return collections, warnings
 
@@ -542,6 +622,7 @@ class ComparisonDashboard:
         self.hover_horizontal = None
 
         self.root = tk.Tk()
+        self.show_soc_averages_var = tk.BooleanVar(master=self.root, value=False)
         self.root.title("SoCPK Comparison Lab")
         self.root.geometry("1460x880")
         self.root.minsize(1080, 680)
@@ -641,6 +722,18 @@ class ComparisonDashboard:
             fieldbackground=[("readonly", PANEL_2)],
             selectbackground=[("readonly", PANEL_2)],
             selectforeground=[("readonly", TEXT)],
+        )
+        style.configure(
+            "Soc.Toggle.TCheckbutton",
+            background=PANEL,
+            foreground=MUTED,
+            font=("Segoe UI Semibold", 8),
+            padding=(8, 1),
+        )
+        style.map(
+            "Soc.Toggle.TCheckbutton",
+            background=[("active", PANEL), ("disabled", PANEL)],
+            foreground=[("selected", CYAN), ("disabled", "#59647b")],
         )
 
     def _build_layout(self) -> None:
@@ -827,6 +920,17 @@ class ComparisonDashboard:
         self.canvas = FigureCanvasTkAgg(self.figure, master=chart_panel)
         self.canvas.get_tk_widget().configure(bg=PANEL, highlightthickness=0)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.ranking_scrollbar = ttk.Scrollbar(
+            chart_panel,
+            orient=tk.VERTICAL,
+            command=self.on_ranking_scrollbar,
+        )
+        self.ranking_scrollbar.pack(
+            side=tk.RIGHT,
+            fill=tk.Y,
+            padx=(4, 0),
+            before=self.canvas.get_tk_widget(),
+        )
         self.canvas.mpl_connect("pick_event", self.on_chart_pick)
         self.canvas.mpl_connect("scroll_event", self.on_ranking_scroll)
         self.canvas.mpl_connect("motion_notify_event", self.on_chart_motion)
@@ -866,15 +970,25 @@ class ComparisonDashboard:
             fg=MUTED,
             font=("Segoe UI Semibold", 8),
         ).pack(anchor="w")
+        value_row = tk.Frame(content, bg=PANEL)
+        value_row.pack(anchor="w", fill=tk.X)
         value = tk.Label(
-            content,
+            value_row,
             text="—",
             bg=PANEL,
             fg=TEXT,
             font=("Segoe UI Semibold", 13),
         )
         value.configure(anchor="w", justify=tk.LEFT)
-        value.pack(anchor="w", fill=tk.X)
+        value.pack(side=tk.LEFT, anchor="w", fill=tk.X, expand=True)
+        if key == "points":
+            self.soc_average_toggle = ttk.Checkbutton(
+                value_row,
+                text="SoC averages",
+                variable=self.show_soc_averages_var,
+                command=self.on_soc_average_toggle,
+                style="Soc.Toggle.TCheckbutton",
+            )
         if key == "leader":
             self.leader_font = tkfont.Font(family="Segoe UI Semibold", size=13)
             value.configure(width=1, wraplength=0, font=self.leader_font)
@@ -923,6 +1037,7 @@ class ComparisonDashboard:
         self.title_label.configure(text=definition.title)
         self.view_combo.configure(values=definition.views)
         self.view_var.set(definition.views[0])
+        self._sync_soc_average_toggle()
         self.selection_modes.setdefault(key, "top5" if choose_defaults else "manual")
         self.selected.setdefault(key, set())
         self._sync_core_filters()
@@ -1004,8 +1119,26 @@ class ComparisonDashboard:
         self.draw_charts()
 
     def on_view_change(self, _event=None) -> None:
+        self._sync_soc_average_toggle()
         self.refresh_profile_list()
         self.draw_charts()
+
+    def _sync_soc_average_toggle(self) -> None:
+        if not hasattr(self, "soc_average_toggle"):
+            return
+        if self.dataset_key != "Battery":
+            self.soc_average_toggle.pack_forget()
+            return
+        if not self.soc_average_toggle.winfo_manager():
+            self.soc_average_toggle.pack(side=tk.LEFT, padx=(8, 0))
+        frame = self.collections.get("Battery")
+        has_soc = frame is not None and "soc" in frame and frame["soc"].astype(bool).any()
+        supported_view = self.view_var.get() in {"Energy efficiency", "Average power draw"}
+        self.soc_average_toggle.state(["!disabled"] if has_soc and supported_view else ["disabled"])
+
+    def on_soc_average_toggle(self) -> None:
+        if self.dataset_key == "Battery":
+            self.draw_charts()
 
     def _ranked_labels(self, key: str) -> list[str]:
         frame = self._core_filtered_frame(key)
@@ -1099,21 +1232,26 @@ class ComparisonDashboard:
         if self.dataset_key not in self.collections:
             return
         selected_frame = self._selected_frame()
+        chart_frame = selected_frame
+        if self.dataset_key == "Battery" and self.view_var.get() in SOC_AVERAGE_VIEWS:
+            # These are dataset-level aggregates, so they remain useful even if
+            # the device selector is narrowed or cleared.
+            chart_frame = self.collections["Battery"].copy()
         self.line_artists = []
         self.hover_points = []
         self.hover_marker = None
         self.hover_annotation = None
         self.hover_vertical = None
         self.hover_horizontal = None
-        if selected_frame.empty:
+        if chart_frame.empty:
             self._draw_empty()
         elif self.dataset_key in CURVE_DATASETS:
-            self._draw_curve_charts(selected_frame)
+            self._draw_curve_charts(chart_frame)
         else:
-            self._draw_battery_charts(selected_frame)
+            self._draw_battery_charts(chart_frame)
         if self.hover_points:
             self._install_hover_artists()
-        self._update_stats(selected_frame)
+        self._update_stats(chart_frame)
         self._update_selection_note()
         self.canvas.draw_idle()
 
@@ -1330,6 +1468,11 @@ class ComparisonDashboard:
 
     def _draw_battery_charts(self, frame: pd.DataFrame) -> None:
         view = self.view_var.get()
+        if "soc" not in frame or any(column not in frame for column in SOC_AVERAGE_COLUMNS):
+            frame = add_soc_average_columns(frame)
+        if view in SOC_AVERAGE_VIEWS:
+            self._draw_soc_average_charts(frame, view)
+            return
         summary = (
             frame.groupby("__label", as_index=False)
             .agg(
@@ -1345,6 +1488,12 @@ class ComparisonDashboard:
                 geekerwanCapacityWh=("geekerwanCapacityWh", "mean"),
                 geekerwanAvgPowerW=("geekerwanAvgPowerW", "mean"),
                 geekerwanMinPerWh=("geekerwanMinPerWh", "mean"),
+                soc=("soc", "first"),
+                soc_device_count=("soc_device_count", "max"),
+                soc_avg_capacity_wh=("soc_avg_capacity_wh", "mean"),
+                soc_avg_power_w=("soc_avg_power_w", "mean"),
+                soc_avg_min_per_wh=("soc_avg_min_per_wh", "mean"),
+                soc_avg_runtime_hours=("soc_avg_runtime_hours", "mean"),
             )
         )
         labels = sorted(summary["__label"], key=str.casefold)
@@ -1375,6 +1524,11 @@ class ComparisonDashboard:
         measured_x_column = measured_columns[x_column]
         measured_y_column = measured_columns[y_column]
         measured_count = int(summary["geekerwanMeasuredMah"].notna().sum())
+        show_soc_averages = (
+            bool(getattr(self, "show_soc_averages_var", None))
+            and self.show_soc_averages_var.get()
+            and view in {"Energy efficiency", "Average power draw"}
+        )
 
         show_point_labels = len(summary) <= 18
         interaction_note = (
@@ -1414,7 +1568,8 @@ class ComparisonDashboard:
                         label=label,
                         details=(
                             f"{label}\n"
-                            f"Runtime: {float(row['hours']):.2f} h "
+                            + (f"SoC: {row['soc']}\n" if row["soc"] else "")
+                            + f"Runtime: {float(row['hours']):.2f} h "
                             f"({float(row['minutes']):.0f} min)\n"
                             f"Capacity: {float(row['capacityWh']):.2f} Wh\n"
                             f"Average power: {float(row['avgPowerW']):.2f} W\n"
@@ -1478,20 +1633,75 @@ class ComparisonDashboard:
                     fontsize=8,
                     alpha=0.9,
                 )
+        soc_average_count = 0
+        if show_soc_averages:
+            average_y_columns = {
+                "avgPowerW": "soc_avg_power_w",
+                "minPerWh": "soc_avg_min_per_wh",
+                "hours": "soc_avg_runtime_hours",
+            }
+            average_y = average_y_columns[y_column]
+            soc_rows = summary[summary["soc"].fillna("").astype(str).str.strip().ne("")]
+            soc_rows = soc_rows.drop_duplicates("soc").sort_values("soc", key=lambda values: values.str.casefold())
+            for index, (_, row) in enumerate(soc_rows.iterrows()):
+                y_value = float(row[average_y])
+                if not np.isfinite(y_value):
+                    continue
+                soc = str(row["soc"])
+                device_count = int(row["soc_device_count"])
+                color = PALETTE[index % len(PALETTE)]
+                average_line = self.main_axis.axhline(
+                    y_value,
+                    color=color,
+                    linestyle=(0, (5, 3)),
+                    linewidth=1.8,
+                    alpha=0.9,
+                    zorder=2,
+                    picker=5,
+                )
+                average_line._socpk_label = (
+                    f"{soc} average: {y_value:.2f} {y_label} · "
+                    f"{device_count} device{'s' if device_count != 1 else ''}"
+                )
+                self.line_artists.append(average_line)
+                self.main_axis.text(
+                    0.985,
+                    y_value,
+                    f"{self._short_label(soc, 22)}  {y_value:.2f}",
+                    transform=self.main_axis.get_yaxis_transform(),
+                    ha="right",
+                    va="bottom",
+                    color=color,
+                    fontsize=8,
+                    fontweight="bold",
+                    alpha=0.95,
+                    bbox={"facecolor": PLOT_BG, "edgecolor": "none", "alpha": 0.78, "pad": 1.5},
+                    zorder=7,
+                )
+                soc_average_count += 1
+
+        legend_handles = []
         if measured_count:
-            legend = self.main_axis.legend(
-                handles=(
-                    Line2D(
-                        [], [], marker="o", linestyle="none", markersize=7,
-                        markerfacecolor=MUTED, markeredgecolor=PLOT_BG,
-                        label="SoCPK / advertised capacity",
-                    ),
-                    Line2D(
-                        [], [], marker="D", linestyle="none", markersize=7,
-                        markerfacecolor=PLOT_BG, markeredgecolor=MUTED,
-                        markeredgewidth=1.8, label="Geekerwan measured capacity",
-                    ),
+            legend_handles.extend((
+                Line2D(
+                    [], [], marker="o", linestyle="none", markersize=7,
+                    markerfacecolor=MUTED, markeredgecolor=PLOT_BG,
+                    label="SoCPK / advertised capacity",
                 ),
+                Line2D(
+                    [], [], marker="D", linestyle="none", markersize=7,
+                    markerfacecolor=PLOT_BG, markeredgecolor=MUTED,
+                    markeredgewidth=1.8, label="Geekerwan measured capacity",
+                ),
+            ))
+        if soc_average_count:
+            legend_handles.append(Line2D(
+                [], [], linestyle=(0, (5, 3)), linewidth=1.8, color=ORANGE,
+                label="Processor average (y-axis)",
+            ))
+        if legend_handles:
+            legend = self.main_axis.legend(
+                handles=legend_handles,
                 loc="best",
                 frameon=True,
                 facecolor=PANEL_2,
@@ -1506,7 +1716,97 @@ class ComparisonDashboard:
             text=(
                 f"{len(frame):,} battery tests shown · "
                 f"{measured_count} Geekerwan measured overlays"
+                + (f" · {soc_average_count} processor averages" if show_soc_averages else "")
             )
+        )
+
+    def _draw_soc_average_charts(self, frame: pd.DataFrame, view: str) -> None:
+        averages = soc_average_summary(frame)
+        if averages.empty:
+            self.ranking_values = pd.Series(dtype=float)
+            self.ranking_offset = 0
+            self._style_axis(self.main_axis, "No processor averages available")
+            self.main_axis.text(
+                0.5, 0.5, "Collect battery data with --auto-soc",
+                transform=self.main_axis.transAxes, ha="center", va="center", color=MUTED,
+            )
+            self.main_axis.set_xticks([])
+            self.main_axis.set_yticks([])
+            self._style_axis(self.rank_axis, "Processor ranking", "waiting for SoC data")
+            self.rank_axis.set_xticks([])
+            self.rank_axis.set_yticks([])
+            self.chart_note.configure(text="No precomputed SoC averages in the loaded battery data")
+            return
+
+        if view == "SoC Average Power Draw":
+            x_column, y_column = "soc_avg_capacity_wh", "soc_avg_power_w"
+            x_label, y_label = "Average battery capacity (Wh)", "Average power draw (W)"
+            title = "Processor-average power draw"
+            rank_label, higher = "Average power (W)", False
+        else:
+            x_column, y_column = "soc_avg_power_w", "soc_avg_min_per_wh"
+            x_label, y_label = "Average power draw (W)", "Average minutes per Wh"
+            title = "Processor-average efficiency"
+            rank_label, higher = "Average minutes per Wh", True
+
+        self._style_axis(
+            self.main_axis,
+            title,
+            f"{len(averages)} processors · precomputed across the loaded battery dataset",
+        )
+        self.main_axis.set_xlabel(x_label, labelpad=6)
+        self.main_axis.set_ylabel(y_label, labelpad=6)
+        show_labels = len(averages) <= 24
+        for index, (_, row) in enumerate(averages.iterrows()):
+            soc = str(row["soc"])
+            x_value = float(row[x_column])
+            y_value = float(row[y_column])
+            if not np.isfinite(x_value) or not np.isfinite(y_value):
+                continue
+            color = PALETTE[index % len(PALETTE)]
+            point = self.main_axis.scatter(
+                x_value,
+                y_value,
+                s=92,
+                color=color,
+                edgecolor=PLOT_BG,
+                linewidth=1.4,
+                zorder=4,
+                picker=True,
+            )
+            point._socpk_label = soc
+            self.line_artists.append(point)
+            device_count = int(row["soc_device_count"])
+            self.hover_points.append(
+                HoverPoint(
+                    x=x_value,
+                    y=y_value,
+                    label=soc,
+                    details=(
+                        f"{soc} · {device_count} device{'s' if device_count != 1 else ''}\n"
+                        f"Average capacity: {float(row['soc_avg_capacity_wh']):.2f} Wh\n"
+                        f"Average power: {float(row['soc_avg_power_w']):.2f} W\n"
+                        f"Average efficiency: {float(row['soc_avg_min_per_wh']):.2f} min/Wh\n"
+                        f"Average runtime: {float(row['soc_avg_runtime_hours']):.2f} h"
+                    ),
+                    color=color,
+                )
+            )
+            if show_labels:
+                self.main_axis.annotate(
+                    self._short_label(soc, 25),
+                    (x_value, y_value),
+                    xytext=(7, 7),
+                    textcoords="offset points",
+                    color=TEXT,
+                    fontsize=8,
+                    alpha=0.92,
+                )
+
+        ranking = averages.set_index("soc")[y_column]
+        self._draw_ranking(ranking, rank_label, higher_is_better=higher)
+        self.chart_note.configure(
+            text=f"{len(averages)} precomputed processor averages · {int(averages['soc_device_count'].sum())} device profiles"
         )
 
     def _draw_ranking(
@@ -1577,31 +1877,51 @@ class ComparisonDashboard:
                 fontweight="bold",
             )
 
-        if total > page_size:
-            track_top, track_bottom = 0.94, 0.06
-            track_height = track_top - track_bottom
-            thumb_height = track_height * page_size / total
-            progress = start / maximum_offset if maximum_offset else 0.0
-            thumb_top = track_top - progress * (track_height - thumb_height)
-            thumb_bottom = thumb_top - thumb_height
-            self.rank_axis.plot(
-                [1.018, 1.018],
-                [track_bottom, track_top],
-                transform=self.rank_axis.transAxes,
-                color=GRID,
-                linewidth=4,
-                solid_capstyle="round",
-                clip_on=False,
-            )
-            self.rank_axis.plot(
-                [1.018, 1.018],
-                [thumb_bottom, thumb_top],
-                transform=self.rank_axis.transAxes,
-                color=ACCENT,
-                linewidth=4,
-                solid_capstyle="round",
-                clip_on=False,
-            )
+        self._sync_ranking_scrollbar(total, page_size, start)
+
+    def _sync_ranking_scrollbar(self, total: int, page_size: int, start: int) -> None:
+        scrollbar = getattr(self, "ranking_scrollbar", None)
+        if scrollbar is None:
+            return
+        if total <= page_size or not total:
+            scrollbar.set(0.0, 1.0)
+            scrollbar.state(["disabled"])
+            return
+        scrollbar.state(["!disabled"])
+        scrollbar.set(start / total, min(1.0, (start + page_size) / total))
+
+    def _set_ranking_offset(self, offset: int) -> None:
+        total = len(self.ranking_values)
+        page_size = min(self.ranking_page_size, total)
+        maximum_offset = max(0, total - page_size)
+        new_offset = min(max(0, int(offset)), maximum_offset)
+        if new_offset == self.ranking_offset:
+            return
+        self.ranking_offset = new_offset
+        self._render_ranking()
+        self.canvas.draw_idle()
+
+    def on_ranking_scrollbar(self, *args: str) -> None:
+        """Handle native Tk scrollbar commands for the ranking subplot."""
+        if len(args) < 2 or len(self.ranking_values) <= self.ranking_page_size:
+            return
+        command, value = args[0], args[1]
+        if command == "moveto":
+            try:
+                offset = round(float(value) * len(self.ranking_values))
+            except ValueError:
+                return
+        elif command == "scroll":
+            try:
+                amount = int(float(value))
+            except ValueError:
+                return
+            unit = args[2] if len(args) > 2 else "units"
+            stride = self.ranking_page_size if unit == "pages" else 3
+            offset = self.ranking_offset + amount * stride
+        else:
+            return
+        self._set_ranking_offset(offset)
 
     def on_ranking_scroll(self, event) -> None:
         if event.inaxes is not self.rank_axis:
@@ -1612,29 +1932,41 @@ class ComparisonDashboard:
         step = getattr(event, "step", 0)
         if not step:
             step = 1 if getattr(event, "button", None) == "up" else -1
-        old_offset = self.ranking_offset
-        self.ranking_offset -= int(step * 3)
-        self.ranking_offset = min(
-            max(0, self.ranking_offset),
-            total - self.ranking_page_size,
-        )
-        if self.ranking_offset != old_offset:
-            self._render_ranking()
-            self.canvas.draw_idle()
+        direction = 1 if step > 0 else -1
+        distance = max(1, int(round(abs(float(step)) * 3)))
+        self._set_ranking_offset(self.ranking_offset - direction * distance)
 
     def _update_stats(self, frame: pd.DataFrame) -> None:
         all_frame = self.collections[self.dataset_key]
-        selected_count = frame["__label"].nunique()
-        self.stat_values["profiles"].configure(
-            text=f"{selected_count} / {all_frame['__label'].nunique()}"
-        )
-        self.stat_values["points"].configure(text=f"{len(frame):,}")
+        if self.dataset_key == "Battery" and self.view_var.get() in SOC_AVERAGE_VIEWS:
+            shown_averages = soc_average_summary(frame)
+            all_averages = soc_average_summary(all_frame)
+            self.stat_values["profiles"].configure(
+                text=f"{len(shown_averages)} / {len(all_averages)}"
+            )
+            self.stat_values["points"].configure(text=f"{len(shown_averages):,}")
+        else:
+            selected_count = frame["__label"].nunique()
+            self.stat_values["profiles"].configure(
+                text=f"{selected_count} / {all_frame['__label'].nunique()}"
+            )
+            self.stat_values["points"].configure(text=f"{len(frame):,}")
         if frame.empty:
-            leader = "—"
+            leader_text = "—"
         elif self.dataset_key in CURVE_DATASETS:
             metric = (DATASET_DEFINITIONS[self.dataset_key].score_column
                       if self.view_var.get() == "Performance curve" else "Efficiency")
             leader = frame.groupby("__label")[metric].max().idxmax()
+            leader_text = self._leader_label(str(leader), frame)
+        elif self.view_var.get() in SOC_AVERAGE_VIEWS:
+            averages = soc_average_summary(frame)
+            if averages.empty:
+                leader_text = "—"
+            else:
+                metric = ("soc_avg_power_w" if self.view_var.get() == "SoC Average Power Draw"
+                          else "soc_avg_min_per_wh")
+                best_index = averages[metric].idxmin() if metric == "soc_avg_power_w" else averages[metric].idxmax()
+                leader_text = str(averages.loc[best_index, "soc"])
         else:
             metric = {
                 "Runtime vs capacity": "hours",
@@ -1643,7 +1975,7 @@ class ComparisonDashboard:
             }[self.view_var.get()]
             grouped = frame.groupby("__label")[metric].mean()
             leader = grouped.idxmin() if metric == "avgPowerW" else grouped.idxmax()
-        leader_text = self._leader_label(str(leader), frame)
+            leader_text = self._leader_label(str(leader), frame)
         self.stat_values["leader"].configure(text=leader_text)
         if hasattr(self, "hero"):
             self._resize_leader()
@@ -1879,7 +2211,24 @@ class ComparisonDashboard:
         self.root.quit()
         self.root.destroy()
 
+    @staticmethod
+    def _exit_on_termination(signum: int, _frame: object) -> None:
+        """Exit without entering Tk's unsafe macOS signal finalizer.
+
+        Tk 9.0 installs a macOS signal handler that calls ``Tcl_Exit``.  If
+        SIGTERM or SIGINT arrives while ``mainloop`` is active, that handler
+        can call back into Python after the thread state has been released and
+        abort the interpreter with ``PyEval_RestoreThread``.  External
+        termination is already an explicit request to stop, so avoid Tk
+        teardown entirely and return the conventional shell status instead.
+        """
+        os._exit(128 + signum)
+
     def run(self) -> None:
+        # This also makes Ctrl-C from Terminal and Stop from an IDE quiet and
+        # predictable on macOS.  The window's close button still uses close().
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(signum, self._exit_on_termination)
         self.root.mainloop()
 
 

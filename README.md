@@ -104,6 +104,18 @@ published GPU when `--gpus` is omitted.
 cache-only runs. `--preview` prints an enriched table and `--correlate` prints
 Pearson correlations against efficiency.
 
+Use `--auto-soc` to resolve phone models through GSMArena's manufacturer
+catalogs and add `soc` to the snapshot. Lookups are deliberately opt-in,
+polite, and cached in `.gsm_cache/`; `--auto-soc --spec-offline` reuses only
+the cache. Alongside each resolved SoC, the CSV stores its device count and
+precomputed mean capacity, average power, minutes/Wh, and runtime for that
+snapshot. Manual `--spec` mappings are applied first and remain useful for
+regional models that a catalog cannot match safely.
+
+```powershell
+python Battery\battery_parser.py --auto-soc
+```
+
 ## Dashboard
 
 ```powershell
@@ -113,8 +125,10 @@ python socpk_gui.py
 On macOS, the launcher detects Python installations that omit Tk (including
 the default Homebrew configuration). If `uv` is available, it automatically
 relaunches with a user-local Tk-enabled Python and the declared requirements;
-no system Python changes are needed. Without `uv`, install it or install the
-Homebrew `python-tk` formula matching your Python version.
+that fallback is explicitly offline and uses uv's local package cache, so
+starting the dashboard does not contact PyPI. No system Python changes are
+needed. Without `uv`, install it or install the Homebrew `python-tk` formula
+matching your Python version.
 
 The dashboard scans the project folder for recognized CPU, GPU, and battery
 CSVs. Timestamped siblings are treated as one snapshot family and only the
@@ -147,7 +161,13 @@ Battery charts show the pulled SoCPK points and overlay Geekerwan's static
 measured usable-capacity results where a device matches. Hollow diamonds mark
 the measured values; the measured Wh point scales the pulled Wh capacity by
 `measured mAh / advertised mAh`. The overlays do not affect the CSV data or
-the rankings.
+the rankings. When processor data is present, the **SoC averages** toggle beside
+the data-point count adds labeled processor-average y-axis reference lines to the Energy
+efficiency and Average power draw views. Old battery CSVs without `soc` remain
+loadable; the toggle stays disabled for them. The Battery comparison dropdown
+also includes **SoC Average Power Draw** and **SoC Average Efficiency**. These
+dedicated views plot and rank the precomputed processor aggregates across the
+whole loaded battery dataset.
 
 Flags:
 

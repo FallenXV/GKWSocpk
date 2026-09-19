@@ -19,6 +19,8 @@ Features
     * screen_size_in, resolution_px_w/h, refresh_hz
     * chipset, cpu, gpu, battery_mAh
   Use --spec "Brand|Model=URL" or --spec-map-json file.
+- Optional cached model-to-SoC discovery through GSMArena maker catalogs
+- Per-SoC battery averages embedded in CSV and JSON snapshots
 
 Requires:
     pip install beautifulsoup4 requests
@@ -52,6 +54,14 @@ from socpk_client import (  # noqa: E402
     fetch_chart_page,
     battery_rows_from_page,
     new_snapshot,
+)
+from battery_soc import (  # noqa: E402
+    GSM_ARENA_ROOT,
+    canonical_brand,
+    canonical_soc_name,
+    choose_phone_url,
+    parse_maker_links,
+    parse_phone_catalog,
 )
 
 # -----------------------------
@@ -458,7 +468,8 @@ def ensure_cache_dir():
     os.makedirs(SPEC_CACHE_DIR, exist_ok=True)
 
 def cache_path_for(key: str) -> str:
-    return os.path.join(SPEC_CACHE_DIR, f"{key}.html")
+    safe_key = re.sub(r"[^a-zA-Z0-9._-]+", "_", key).strip("._") or "page"
+    return os.path.join(SPEC_CACHE_DIR, f"{safe_key}.html")
 
 def polite_fetch(url: str, sleep_s: float = 1.0) -> str:
     headers = {
@@ -586,6 +597,115 @@ def enrich_with_gsmarena(records: List[Dict], spec_urls: Dict[str, str],
         specs = parse_gsmarena_specs(html)
         r.update(specs)
 
+
+class GSMArenaSoCResolver:
+    """Resolve phone models through cached maker catalogs, then read their chipset."""
+
+    def __init__(self, offline_only: bool = False) -> None:
+        self.offline_only = offline_only
+        self._maker_links: Optional[Dict[str, str]] = None
+        self._catalogs: Dict[str, List[Tuple[str, str]]] = {}
+        self._catalog_pages: Dict[str, List[str]] = {}
+        self._visited_pages: Dict[str, set[str]] = {}
+
+    def _read(self, url: str, cache_key: str) -> Optional[str]:
+        return get_gsmarena_html(url, cache_key, offline_only=self.offline_only)
+
+    def _makers(self) -> Dict[str, str]:
+        if self._maker_links is None:
+            html = self._read(urljoin(GSM_ARENA_ROOT, "makers.php3"), "catalog_makers")
+            self._maker_links = parse_maker_links(html) if html else {}
+        return self._maker_links
+
+    def _load_catalog_page(self, maker: str, url: str) -> None:
+        visited = self._visited_pages.setdefault(maker, set())
+        if url in visited:
+            return
+        visited.add(url)
+        key = "catalog_" + re.sub(r"[^a-z0-9]+", "_", urlparse(url).path.casefold()).strip("_")
+        html = self._read(url, key)
+        if not html:
+            return
+        phones, pages = parse_phone_catalog(html)
+        self._catalogs.setdefault(maker, []).extend(phones)
+        queue = self._catalog_pages.setdefault(maker, [])
+        queue.extend(page for page in pages if page not in visited and page not in queue)
+
+    def resolve_url(self, brand: str, model: str) -> Optional[str]:
+        maker = canonical_brand(brand)
+        maker_url = self._makers().get(maker)
+        if not maker_url:
+            return None
+        if maker not in self._catalogs:
+            self._catalogs[maker] = []
+            self._catalog_pages[maker] = []
+            self._load_catalog_page(maker, maker_url)
+
+        match = choose_phone_url(brand, model, self._catalogs[maker])
+        if match:
+            return match
+        while self._catalog_pages[maker]:
+            self._load_catalog_page(maker, self._catalog_pages[maker].pop(0))
+            match = choose_phone_url(brand, model, self._catalogs[maker])
+            if match:
+                return match
+        return None
+
+    def enrich(self, record: Dict) -> bool:
+        if canonical_soc_name(record.get("soc") or record.get("chipset")):
+            return True
+        url = self.resolve_url(str(record.get("brand", "")), str(record.get("model", "")))
+        if not url:
+            return False
+        key = "phone_" + slug_key(str(record.get("brand", "")), str(record.get("model", "")))
+        html = self._read(url, key)
+        if not html:
+            return False
+        record.update(parse_gsmarena_specs(html))
+        record["spec_url"] = url
+        soc = canonical_soc_name(record.get("chipset"))
+        if soc:
+            record["soc"] = soc
+            return True
+        return False
+
+
+def enrich_soc_automatically(records: List[Dict], offline_only: bool = False) -> Tuple[int, int]:
+    """Resolve missing SoCs; return the resolved and unresolved record counts."""
+    resolver = GSMArenaSoCResolver(offline_only=offline_only)
+    resolved = 0
+    unresolved = 0
+    for index, record in enumerate(records, start=1):
+        if resolver.enrich(record):
+            resolved += 1
+        else:
+            unresolved += 1
+            print(f"[warn] SoC not resolved: {record['brand']} {record['model']}")
+        if index % 10 == 0:
+            print(f"[soc] processed {index}/{len(records)} phone models")
+    return resolved, unresolved
+
+
+def compute_soc_averages(records: List[Dict]) -> None:
+    """Attach stable SoC names and per-processor battery averages to every record."""
+    groups: Dict[str, List[Dict]] = {}
+    for record in records:
+        soc = canonical_soc_name(record.get("soc") or record.get("chipset"))
+        record["soc"] = soc or None
+        if soc:
+            groups.setdefault(soc, []).append(record)
+
+    for rows in groups.values():
+        averages = {
+            "soc_device_count": len(rows),
+            "soc_avg_capacity_wh": sum(float(row["capacityWh"]) for row in rows) / len(rows),
+            "soc_avg_power_w": sum(float(row["avgPowerW"]) for row in rows) / len(rows),
+            "soc_avg_min_per_wh": sum(float(row["minPerWh"]) for row in rows) / len(rows),
+            "soc_avg_runtime_hours": sum(float(row["hours"]) for row in rows) / len(rows),
+        }
+        for record in rows:
+            record.update(averages)
+
 # -----------------------------
 # Simple correlation helpers
 # -----------------------------
@@ -664,6 +784,8 @@ def main():
                     help="JSON file mapping 'brand|model' -> url (keys case/space-insensitive)")
     ap.add_argument("--spec-offline", action="store_true",
                     help="Use cached HTML only; do not fetch (use .gsm_cache)")
+    ap.add_argument("--auto-soc", action="store_true",
+                    help="Resolve each phone's SoC from cached GSMArena maker catalogs and spec pages")
     # Enriched preview / correlations
     ap.add_argument("--preview", action="store_true",
                     help="Print a short enriched preview table")
@@ -717,6 +839,10 @@ def main():
 
     # 6) Enrich in place
     enrich_with_gsmarena(records, spec_urls, offline_only=args.spec_offline)
+    if args.auto_soc:
+        resolved, unresolved = enrich_soc_automatically(records, offline_only=args.spec_offline)
+        print(f"[soc] resolved {resolved}/{len(records)} phone models; {unresolved} unresolved")
+    compute_soc_averages(records)
 
     # 7) Rankings & print
     by_lowest_power = sorted(records, key=lambda p: p["avgPowerW"])
@@ -763,7 +889,9 @@ def main():
     # 9) CSV / JSON
     extra_spec_fields = [
         "screen_size_in", "resolution_px_w", "resolution_px_h",
-        "refresh_hz", "chipset", "cpu", "gpu", "battery_mAh", "spec_url"
+        "refresh_hz", "chipset", "soc", "cpu", "gpu", "battery_mAh", "spec_url",
+        "soc_device_count", "soc_avg_capacity_wh", "soc_avg_power_w",
+        "soc_avg_min_per_wh", "soc_avg_runtime_hours",
     ]
     fieldnames = [
         "brand","model","os","minutes","hours","capacityWh",
