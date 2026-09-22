@@ -54,6 +54,7 @@ const state = {
   modes: { devices: {}, socs: {} },
   cores: {},
   rankOffsets: {},
+  colorMaps: new Map(),
   showMeasured: true,
   showSocAverages: false,
   visible: [],
@@ -67,7 +68,153 @@ let hoverPoints = [];
 
 function dataset() { return state.datasets.get(state.key); }
 
-function palette(index) { return state.palette[index % state.palette.length]; }
+/** Which point fields each view puts on each axis. */
+function curveAxes(entry, view) {
+  if (view === 'Performance curve') {
+    return { xIndex: 0, yIndex: 1, xLabel: 'Board power (W)', yLabel: entry.scoreLabel,
+             rankIndex: 1, rankLabel: 'Peak score' };
+  }
+  if (view === 'Efficiency vs score') {
+    return { xIndex: 1, yIndex: 2, xLabel: entry.scoreLabel, yLabel: 'Score per watt',
+             rankIndex: 2, rankLabel: 'Peak score/W' };
+  }
+  return { xIndex: 0, yIndex: 2, xLabel: 'Board power (W)', yLabel: 'Score per watt',
+           rankIndex: 2, rankLabel: 'Peak score/W' };
+}
+
+function batteryAxes(view) {
+  if (view === 'Energy efficiency') {
+    return { xKey: 'avgPowerW', yKey: 'minPerWh', title: 'Efficiency sweet spot',
+             xLabel: 'Average power draw (W)', yLabel: 'Minutes per Wh',
+             rankKey: 'minPerWh', rankLabel: 'Minutes per Wh', higher: true };
+  }
+  if (view === 'Average power draw') {
+    return { xKey: 'capacityWh', yKey: 'avgPowerW', title: 'Power draw by battery size',
+             xLabel: 'Battery capacity (Wh)', yLabel: 'Average power draw (W)',
+             rankKey: 'avgPowerW', rankLabel: 'Average power (W)', higher: false };
+  }
+  return { xKey: 'capacityWh', yKey: 'hours', title: 'Endurance landscape',
+           xLabel: 'Battery capacity (Wh)', yLabel: 'Runtime (hours)',
+           rankKey: 'hours', rankLabel: 'Runtime (hours)', higher: true };
+}
+
+function socAxes(view) {
+  return view === 'SoC Average Power Draw'
+    ? { xKey: 'capacityWh', yKey: 'powerW', xLabel: 'Average battery capacity (Wh)',
+        yLabel: 'Average power draw (W)', title: 'Processor-average power draw',
+        rankLabel: 'Average power (W)', higher: false }
+    : { xKey: 'powerW', yKey: 'minPerWh', xLabel: 'Average power draw (W)',
+        yLabel: 'Average minutes per Wh', title: 'Processor-average efficiency',
+        rankLabel: 'Average minutes per Wh', higher: true };
+}
+
+/* ---------- colours ---------- */
+
+function extentOf(items) {
+  const xs = [];
+  const ys = [];
+  for (const item of items) {
+    for (const point of item.points) {
+      if (Number.isFinite(point[0]) && Number.isFinite(point[1])) { xs.push(point[0]); ys.push(point[1]); }
+    }
+  }
+  if (!xs.length) return { x0: 0, x1: 1, y0: 0, y1: 1 };
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+}
+
+/** Where every profile of a list sits on one figure, selection ignored. */
+function figureGeometry(entry, view, list) {
+  if (list === 'socs') {
+    const averages = entry.socAverages || [];
+    if (SOC_VIEWS.has(view)) {
+      const axes = socAxes(view);
+      const items = averages.map((average) => ({
+        id: average.soc, points: [[average[axes.xKey], average[axes.yKey]]],
+      }));
+      return { items, extent: extentOf(items) };
+    }
+    // Over a device chart the averages are full-width rules, so only their y
+    // separates them, against the device chart's own range.
+    const axes = batteryAxes(view);
+    const averageKeys = { avgPowerW: 'powerW', minPerWh: 'minPerWh', hours: 'runtimeHours' };
+    const devices = figureGeometry(entry, view, 'devices');
+    const items = averages.map((average) => {
+      const y = average[averageKeys[axes.yKey]];
+      return {
+        id: average.soc,
+        kind: 'hline',
+        points: [[devices.extent.x0, y], [devices.extent.x1, y]],
+      };
+    });
+    return { items, extent: extentOf([...devices.items, ...items]) };
+  }
+
+  if (entry.kind === 'curve') {
+    const axes = curveAxes(entry, view);
+    const items = entry.profiles.map((profile) => ({
+      id: profile.label,
+      points: profile.series.flatMap((series) =>
+        series.points.map((point) => [point[axes.xIndex], point[axes.yIndex]])),
+    }));
+    return { items, extent: extentOf(items) };
+  }
+
+  const axes = batteryAxes(view);
+  const items = entry.profiles.map((profile) => {
+    const points = [[profile[axes.xKey], profile[axes.yKey]]];
+    if (profile.measured) {
+      const measuredKeys = { capacityWh: 'capacityWh', avgPowerW: 'avgPowerW', minPerWh: 'minPerWh' };
+      points.push([
+        measuredKeys[axes.xKey] ? profile.measured[measuredKeys[axes.xKey]] : profile[axes.xKey],
+        measuredKeys[axes.yKey] ? profile.measured[measuredKeys[axes.yKey]] : profile[axes.yKey],
+      ]);
+    }
+    return { id: profile.label, points };
+  });
+  return { items, extent: extentOf(items) };
+}
+
+/** Colours for one figure, computed once and reused for every selection. */
+function colorMap(list) {
+  const entry = dataset();
+  const view = currentView();
+  const cacheKey = `${state.key}|${view}|${list}`;
+  let map = state.colorMaps.get(cacheKey);
+  if (!map) {
+    if (entry.kind === 'battery' && SOC_TOGGLE_VIEWS.has(view)) {
+      // Devices and processor-average rules can share one chart. Assign them
+      // together even while the overlay is hidden, so a later toggle neither
+      // recolours devices nor introduces an avoidable same-colour collision.
+      const groups = ['devices', 'socs'].map((name) => ({
+        name,
+        geometry: figureGeometry(entry, view, name),
+      }));
+      const tagged = groups.flatMap(({ name, geometry }) =>
+        geometry.items.map((item, index) => ({
+          id: `${name}:${index}`,
+          kind: item.kind,
+          points: item.points,
+        })));
+      const assigned = Colors.assign(tagged, state.palette, extentOf(tagged));
+      groups.forEach(({ name, geometry }) => {
+        const groupMap = new Map();
+        geometry.items.forEach((item, index) => {
+          groupMap.set(item.id, assigned.get(`${name}:${index}`));
+        });
+        state.colorMaps.set(`${state.key}|${view}|${name}`, groupMap);
+      });
+    } else {
+      const { items, extent } = figureGeometry(entry, view, list);
+      state.colorMaps.set(cacheKey, Colors.assign(items, state.palette, extent));
+    }
+    map = state.colorMaps.get(cacheKey);
+  }
+  return map;
+}
+
+function colorFor(id, list) {
+  return colorMap(list || activeList()).get(id) || state.palette[0];
+}
 
 function fixed(value, decimals) {
   return Number(value).toLocaleString(undefined, {
@@ -335,7 +482,6 @@ function renderProfileList() {
     ui.profileList.append(empty);
     return;
   }
-  const order = [...chosen].sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }));
   const fragment = document.createDocumentFragment();
   state.visible.forEach((item, index) => {
     const row = document.createElement('div');
@@ -346,7 +492,7 @@ function renderProfileList() {
     row.dataset.index = String(index);
     const swatch = document.createElement('span');
     swatch.className = 'swatch';
-    if (picked) swatch.style.background = palette(order.indexOf(item.id));
+    if (picked) swatch.style.background = colorFor(item.id, list);
     const text = document.createElement('span');
     text.textContent = item.label;
     text.title = item.label;
@@ -459,17 +605,8 @@ function rankItems(rows, higherIsBetter, decimals) {
 function curveScene(entry, profiles) {
   const view = currentView();
   const decimals = entry.scoreDecimals;
-  let xIndex = 0;
-  let yIndex = 2;
-  let xLabel = 'Board power (W)';
-  let yLabel = 'Score per watt';
-  let rankIndex = 2;
-  let rankLabel = 'Peak score/W';
-  if (view === 'Performance curve') {
-    yIndex = 1; yLabel = entry.scoreLabel; rankIndex = 1; rankLabel = 'Peak score';
-  } else if (view === 'Efficiency vs score') {
-    xIndex = 1; xLabel = entry.scoreLabel;
-  }
+  const { xIndex, yIndex, xLabel, yLabel, rankIndex, rankLabel } = curveAxes(entry, view);
+  const colors = colorMap('devices');
 
   const ordered = profiles.slice().sort((left, right) =>
     left.label.localeCompare(right.label, undefined, { sensitivity: 'base' }));
@@ -480,8 +617,8 @@ function curveScene(entry, profiles) {
   const ranking = [];
   let total = 0;
 
-  ordered.forEach((profile, index) => {
-    const color = palette(index);
+  ordered.forEach((profile) => {
+    const color = colors.get(profile.label);
     legend.push({ text: profile.legend, color, shape: 'line' });
     let best = -Infinity;
     profile.series.forEach((series, seriesIndex) => {
@@ -555,24 +692,8 @@ function batteryScene(entry, profiles) {
   const measuredColumns = {
     capacityWh: 'capacityWh', avgPowerW: 'avgPowerW', minPerWh: 'minPerWh', hours: null,
   };
-  let xKey = 'capacityWh';
-  let yKey = 'hours';
-  let xLabel = 'Battery capacity (Wh)';
-  let yLabel = 'Runtime (hours)';
-  let title = 'Endurance landscape';
-  let rankKey = 'hours';
-  let rankLabel = 'Runtime (hours)';
-  let higher = true;
-  if (view === 'Energy efficiency') {
-    xKey = 'avgPowerW'; yKey = 'minPerWh';
-    xLabel = 'Average power draw (W)'; yLabel = 'Minutes per Wh';
-    title = 'Efficiency sweet spot'; rankKey = 'minPerWh'; rankLabel = 'Minutes per Wh';
-  } else if (view === 'Average power draw') {
-    xKey = 'capacityWh'; yKey = 'avgPowerW';
-    xLabel = 'Battery capacity (Wh)'; yLabel = 'Average power draw (W)';
-    title = 'Power draw by battery size'; rankKey = 'avgPowerW'; rankLabel = 'Average power (W)';
-    higher = false;
-  }
+  const { xKey, yKey, xLabel, yLabel, title, rankKey, rankLabel, higher } = batteryAxes(view);
+  const colors = colorMap('devices');
 
   const ordered = profiles.slice().sort((left, right) =>
     left.label.localeCompare(right.label, undefined, { sensitivity: 'base' }));
@@ -586,8 +707,8 @@ function batteryScene(entry, profiles) {
   let matched = 0;
   let rows = 0;
 
-  ordered.forEach((profile, index) => {
-    const color = palette(index);
+  ordered.forEach((profile) => {
+    const color = colors.get(profile.label);
     const x = profile[xKey];
     const y = profile[yKey];
     rows += profile.count;
@@ -637,14 +758,15 @@ function batteryScene(entry, profiles) {
   const showAverages = state.showSocAverages && SOC_TOGGLE_VIEWS.has(view);
   if (showAverages) {
     const averageKeys = { avgPowerW: 'powerW', minPerWh: 'minPerWh', hours: 'runtimeHours' };
+    const socColors = colorMap('socs');
     const socs = selectedSocs(entry)
       .sort((left, right) => left.soc.localeCompare(right.soc, undefined, { sensitivity: 'base' }));
-    socs.forEach((average, index) => {
+    socs.forEach((average) => {
       const value = average[averageKeys[yKey]];
       if (!Number.isFinite(value)) return;
       hlines.push({
         y: value,
-        color: palette(index),
+        color: socColors.get(average.soc),
         text: `${shorten(average.soc, 22)}  ${value.toFixed(2)}`,
       });
     });
@@ -724,20 +846,18 @@ function socAverageScene(entry) {
   }
 
   const powerView = view === 'SoC Average Power Draw';
-  const xKey = powerView ? 'capacityWh' : 'powerW';
-  const yKey = powerView ? 'powerW' : 'minPerWh';
-  const xLabel = powerView ? 'Average battery capacity (Wh)' : 'Average power draw (W)';
-  const yLabel = powerView ? 'Average power draw (W)' : 'Average minutes per Wh';
+  const { xKey, yKey, xLabel, yLabel } = socAxes(view);
+  const colors = colorMap('socs');
 
   const dots = [];
   const labels = [];
   const points = [];
   const ranking = [];
   const showLabels = averages.length <= 24;
-  averages.forEach((average, index) => {
+  averages.forEach((average) => {
     const x = average[xKey];
     const y = average[yKey];
-    const color = palette(index);
+    const color = colors.get(average.soc);
     ranking.push({ label: average.soc, value: y, color });
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     dots.push({ x, y, r: 5.4, fill: color, stroke: Chart.THEME.plot, lineWidth: 1.4 });
@@ -912,6 +1032,7 @@ async function load(url) {
     state.payload = payload;
     state.palette = payload.palette;
     state.datasets = new Map(payload.datasets.map((entry) => [entry.key, entry]));
+    state.colorMaps.clear();
 
     // Drop selections for profiles and processors that a reload removed.
     for (const [list, store] of Object.entries(state.selection)) {

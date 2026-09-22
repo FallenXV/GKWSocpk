@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import ssl
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -183,7 +184,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", content_type)
         self.assertIn(b"SoCPK Comparison Lab", body)
-        for asset in ("/app.css", "/chart.js", "/app.js"):
+        for asset in ("/app.css", "/colors.js", "/chart.js", "/app.js"):
             status, _, body = self.get(asset)
             self.assertEqual(status, 200, asset)
             self.assertTrue(body)
@@ -278,7 +279,7 @@ class BindingTests(unittest.TestCase):
 class AssetTests(unittest.TestCase):
     def test_page_loads_every_shipped_script_and_stylesheet(self) -> None:
         index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
-        for asset in ("app.css", "chart.js", "app.js"):
+        for asset in ("app.css", "colors.js", "chart.js", "app.js"):
             self.assertTrue((WEB_ROOT / asset).is_file(), asset)
             self.assertIn(asset, index)
 
@@ -288,6 +289,43 @@ class AssetTests(unittest.TestCase):
         for benchmark in CPU_BENCHMARKS.values():
             self.assertTrue(labels[benchmark.dataset_key])
         self.assertEqual(labels["Battery"], "BATTERY")
+
+    @unittest.skipUnless(shutil.which("node"), "needs node to exercise browser JavaScript")
+    def test_spatial_colours_balance_repeats_and_separate_rules(self) -> None:
+        script = r"""
+const fs = require('fs');
+const vm = require('vm');
+vm.runInThisContext(fs.readFileSync(process.argv[1], 'utf8') +
+  '\nglobalThis.ColorsUnderTest = Colors;');
+const palette = [
+  '#8b7cff', '#35d0c8', '#ffad5a', '#ff6f91', '#57a8ff', '#8bd45a',
+  '#e17bff', '#ffd166', '#45b7d1', '#f28482', '#84dcc6', '#a9def9',
+];
+const items = Array.from({ length: 13 }, (_, index) => ({
+  id: String(index), points: [[index, Math.sin(index)]],
+}));
+const assigned = ColorsUnderTest.assign(items, palette);
+const loads = new Map();
+for (const colour of assigned.values()) loads.set(colour, (loads.get(colour) || 0) + 1);
+const crossing = ColorsUnderTest.assign([
+  { id: 'point', points: [[0.5, 0]] },
+  { id: 'rule', kind: 'hline', points: [[0, 0], [1, 0]] },
+  { id: 'far', points: [[0.5, 1]] },
+], ['#000000', '#ffffff']);
+process.stdout.write(JSON.stringify({
+  loads: [...loads.values()].sort((left, right) => left - right),
+  crossingSeparated: crossing.get('point') !== crossing.get('rule'),
+}));
+"""
+        result = subprocess.run(
+            [shutil.which("node"), "-e", script, str(WEB_ROOT / "colors.js")],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        outcome = json.loads(result.stdout)
+        self.assertEqual(outcome["loads"], [1] * 11 + [2])
+        self.assertTrue(outcome["crossingSeparated"])
 
 
 if __name__ == "__main__":

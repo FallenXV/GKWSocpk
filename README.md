@@ -163,6 +163,14 @@ must match both the groups and names selected. All clears the core filters.
 Filters, selection modes, the chosen view, and the search text are kept
 independently for each benchmark, so switching tabs and back restores context.
 
+Each profile's colour is fixed for a figure before anything is drawn, so
+selecting or deselecting devices never recolours the ones still on screen.
+Where there are more profiles than palette entries some colours must repeat;
+which ones repeat is chosen per figure from the profiles' positions on it, so
+a repeat falls between two marks that are already far apart. Because the
+assignment follows the geometry, a profile can take a different colour in a
+different view of the same dataset.
+
 Curve legends show the chip and core name; the leader card and hover details
 retain core types. Dotted lines join two or three sparse SPEC samples from the
 same core and source without adding interpolated data points. Hovering near a
