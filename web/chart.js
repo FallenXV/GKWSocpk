@@ -388,6 +388,24 @@ function drawMain(ctx, panel, main) {
 
   const occupied = [];
   withClip(ctx, plot.x, plot.y, plot.width, plot.height, () => {
+    for (const reference of main.references || []) {
+      ctx.strokeStyle = reference.color;
+      ctx.globalAlpha = reference.alpha == null ? 1 : reference.alpha;
+      ctx.lineWidth = reference.width || 2;
+      ctx.setLineDash(reference.dash || [8, 5]);
+      ctx.beginPath();
+      const pts = reference.pts || [
+        [xScale.lo, reference.slope * xScale.lo + reference.intercept],
+        [xScale.hi, reference.slope * xScale.hi + reference.intercept],
+      ];
+      pts.forEach(([x, y], index) => {
+        if (index === 0) ctx.moveTo(xScale(x), yScale(y));
+        else ctx.lineTo(xScale(x), yScale(y));
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
     for (const rule of main.hlines || []) {
       const y = yScale(rule.y);
       ctx.strokeStyle = rule.color;
@@ -459,6 +477,35 @@ function drawMain(ctx, panel, main) {
       ctx.fillStyle = label.color || THEME.text;
       ctx.globalAlpha = 0.92;
       ctx.fillText(label.text, anchorX + (flip ? -gap : gap), yScale(label.y) - (label.dy || 7));
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = 'left';
+
+    // Name each labelled reference where it leaves the plot, top or right.
+    ctx.font = font(9.5, 700);
+    const placed = [];
+    for (const reference of main.references || []) {
+      if (!reference.label || reference.pts) continue;
+      let x = xScale.hi;
+      let y = reference.slope * x + reference.intercept;
+      const top = y > yScale.hi && reference.slope > 0;
+      if (top) { y = yScale.hi; x = (y - reference.intercept) / reference.slope; }
+      if (x < xScale.lo || y < yScale.lo || y > yScale.hi) continue;
+      const width = ctx.measureText(reference.label).width;
+      const px = Math.max(plot.x + width + 6, xScale(x) - (top ? 4 : 6));
+      const py = top ? yScale(y) + 14 : yScale(y) - 4;
+      // Earlier references win; a label that would overlap one is dropped.
+      const box = [px - width - 5, py - 13, px + 5, py + 2];
+      if (placed.some((b) => box[0] < b[2] && b[0] < box[2] && box[1] < b[3] && b[1] < box[3])) continue;
+      placed.push(box);
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.globalAlpha = 0.78;
+      ctx.fillStyle = THEME.plot;
+      ctx.fillRect(px - width - 3, py - 12, width + 6, 13);
+      ctx.globalAlpha = reference.alpha == null ? 1 : Math.max(reference.alpha, 0.7);
+      ctx.fillStyle = reference.color;
+      ctx.fillText(reference.label, px, py);
       ctx.globalAlpha = 1;
     }
     ctx.textAlign = 'left';

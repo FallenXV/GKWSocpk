@@ -33,6 +33,7 @@ import os
 import re
 import csv
 import json
+import hashlib
 import time
 import argparse
 import requests
@@ -55,6 +56,7 @@ from socpk_client import (  # noqa: E402
     battery_rows_from_page,
     new_snapshot,
 )
+from battery_metadata import review_record
 from battery_soc import (  # noqa: E402
     GSM_ARENA_ROOT,
     canonical_brand,
@@ -469,7 +471,11 @@ def ensure_cache_dir():
 
 def cache_path_for(key: str) -> str:
     safe_key = re.sub(r"[^a-zA-Z0-9._-]+", "_", key).strip("._") or "page"
-    return os.path.join(SPEC_CACHE_DIR, f"{safe_key}.html")
+    # The readable slug is only a prefix.  It is not injective for CJK names,
+    # punctuation, or region-qualified models, so include the full key digest
+    # before using it as a filename.
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return os.path.join(SPEC_CACHE_DIR, f"{safe_key}_{digest}.html")
 
 def polite_fetch(url: str, sleep_s: float = 1.0) -> str:
     headers = {
@@ -538,7 +544,9 @@ def parse_gsmarena_specs(html: str) -> Dict:
 
     # Refresh Hz from Size/Type lines
     displaytype = data.get("data:displaytype") or data.get("label:Type") or ""
-    rr_m = re.search(r'(\d{2,3})\s*Hz', displaytype + " " + displaysize)
+    refresh_text = re.sub(r'(?i)\b\d+(?:\.\d+)?\s*Hz\s*(?:PWM|dimming)\b', '', displaytype + ' ' + displaysize)
+    refresh_text = re.sub(r'(?i)\bPWM\s*(?:dimming)?\s*(?:at\s*)?[:-]?\s*\d+(?:\.\d+)?\s*Hz', '', refresh_text)
+    rr_m = re.search(r'(?<![\d.])(\d{2,3})\s*Hz\b', refresh_text, re.I)
     if rr_m:
         out["refresh_hz"] = int(rr_m.group(1))
 
@@ -842,6 +850,7 @@ def main():
     if args.auto_soc:
         resolved, unresolved = enrich_soc_automatically(records, offline_only=args.spec_offline)
         print(f"[soc] resolved {resolved}/{len(records)} phone models; {unresolved} unresolved")
+    records = [review_record(record) for record in records]
     compute_soc_averages(records)
 
     # 7) Rankings & print
@@ -888,6 +897,7 @@ def main():
 
     # 9) CSV / JSON
     extra_spec_fields = [
+        "metadata_review", "metadata_source", "metadata_reviewed",
         "screen_size_in", "resolution_px_w", "resolution_px_h",
         "refresh_hz", "chipset", "soc", "cpu", "gpu", "battery_mAh", "spec_url",
         "soc_device_count", "soc_avg_capacity_wh", "soc_avg_power_w",

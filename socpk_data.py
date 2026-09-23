@@ -339,7 +339,13 @@ def classify_frame(frame: pd.DataFrame, path: Path) -> str | None:
 
 def discover_csv_files(root: Path) -> list[Path]:
     """Find project CSVs, keeping only the newest file in a snapshot family."""
-    ignored = {".git", ".venv", "venv", "__pycache__", ".idea", ".pytest_cache"}
+    # Evidence and fixture CSVs are implementation inputs, not dashboard data.
+    # The project-root launch scans recursively, so keep them from being merged
+    # with the newest production snapshot family.
+    ignored = {
+        ".git", ".venv", "venv", "__pycache__", ".idea", ".pytest_cache",
+        "artifacts", "tests",
+    }
     files: list[Path] = []
     for path in root.rglob("*.csv"):
         if any(part in ignored for part in path.relative_to(root).parts):

@@ -715,7 +715,17 @@ class ComparisonDashboard:
                 .sort_values(ascending=False)
             )
         else:
-            ranking = frame.groupby("__label", sort=False)["minPerWh"].max().sort_values(ascending=False)
+            view = self.view_var.get() if key == self.dataset_key and hasattr(self, "view_var") else "Energy efficiency"
+            metric, higher_is_better = {
+                "Runtime vs capacity": ("hours", True),
+                "Average power draw": ("avgPowerW", False),
+                "Energy efficiency": ("minPerWh", True),
+            }.get(view, ("minPerWh", True))
+            ranking = (
+                frame.groupby("__label", sort=False)[metric]
+                .mean()
+                .sort_values(ascending=not higher_is_better)
+            )
         return list(ranking.index)
 
     def refresh_profile_list(self) -> None:
@@ -1045,9 +1055,9 @@ class ComparisonDashboard:
         color_map = {label: PALETTE[index % len(PALETTE)] for index, label in enumerate(labels)}
 
         if view == "Energy efficiency":
-            x_column, y_column = "avgPowerW", "minPerWh"
-            x_label, y_label = "Average power draw (W)", "Minutes per Wh"
-            title = "Efficiency sweet spot"
+            x_column, y_column = "capacityWh", "minPerWh"
+            x_label, y_label = "Battery capacity (Wh)", "Minutes per Wh"
+            title = "Energy efficiency by battery size"
             rank_column, rank_label, higher = "minPerWh", "Minutes per Wh", True
         elif view == "Average power draw":
             x_column, y_column = "capacityWh", "avgPowerW"

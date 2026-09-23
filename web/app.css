@@ -446,6 +446,7 @@ button, input, select { font: inherit; color: inherit; }
   font-size: 11px;
 }
 .rank-hint { white-space: nowrap; }
+.reference-slot { height: 40px; flex: 0 0 40px; overflow-y: auto; }
 
 /* ---------- toast ---------- */
 
@@ -476,3 +477,32 @@ button, input, select { font: inherit; color: inherit; }
   .body { grid-template-columns: 250px minmax(0, 1fr); }
   .quick .chip { padding: 7px 4px; font-size: 11px; }
 }
+
+/* The analysis lab scrolls with the document; the original chart retains its height. */
+body { overflow: auto; }
+.shell { height: auto; min-height: 100vh; }
+.body { flex: none; height: max(560px, calc(100vh - 220px)); }
+.analytics { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+.analytics summary { cursor: pointer; font-size: 18px; font-weight: 600; }
+.analytics summary span { margin-left: 12px; font-size: 12px; color: var(--muted); font-weight: 400; }
+.analysis-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin: 18px 0; }
+.analysis-controls label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; }
+.analysis-controls input, .analysis-controls select { max-width: 300px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
+.analysis-controls input[type=number] { width: 135px; }
+.analysis-controls input[type=range] { width: 230px; }
+.analysis-note { color: var(--muted); font-size: 13px; max-width: 1100px; }
+.analysis-table-wrap { overflow-x: auto; margin: 12px 0 24px; }
+.analytics table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+.analytics th, .analytics td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.analytics th { color: var(--muted); font-weight: 500; }
+.analytics td:first-child { min-width: 160px; }
+.analytics h3 { margin: 22px 0 8px; font-size: 16px; }
+.analysis-plot { width: 100%; max-width: 1000px; height: auto; display: block; background: var(--panel-2); border-radius: 8px; }
+.analytics a { color: var(--cyan); }
+
+.analysis-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 10px 0; font-size: 12px; }
+
+.analysis-sort { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.analysis-sort:hover, .analytics th[aria-sort="ascending"], .analytics th[aria-sort="descending"] { color: var(--cyan); }
+.analysis-sort:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; border-radius: 2px; }
+#analysis-clear-sort:disabled { opacity: 0.45; cursor: default; }

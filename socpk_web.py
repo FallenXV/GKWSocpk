@@ -147,7 +147,9 @@ def _curve_dataset(key: str, frame: pd.DataFrame) -> dict[str, Any]:
 
 
 def _battery_dataset(frame: pd.DataFrame) -> dict[str, Any]:
-    frame = add_soc_average_columns(frame) if "soc_avg_power_w" not in frame else frame
+    from battery_metadata import review_record, brand_name
+    frame = pd.DataFrame([review_record(row) for row in frame.to_dict("records")])
+    frame = add_soc_average_columns(frame)
     summary = frame.groupby("__label", as_index=False).agg(
         minutes=("minutes", "mean"),
         hours=("hours", "mean"),
@@ -167,6 +169,8 @@ def _battery_dataset(frame: pd.DataFrame) -> dict[str, Any]:
 
     profiles = []
     for _, row in summary.iterrows():
+        source_rows = frame[frame["__label"].eq(row["__label"])]
+        first = source_rows.iloc[0]
         measured = None
         if _number(row["geekerwanMeasuredMah"]) is not None:
             measured = {
@@ -183,6 +187,15 @@ def _battery_dataset(frame: pd.DataFrame) -> dict[str, Any]:
             "legend": _text(row["__label"]),
             "leader": _text(row["__label"]),
             "soc": _text(row["soc"]),
+            "brand": brand_name(first.get("brand", "")),
+            "model": _text(first.get("model", "")),
+            "os": _text(first.get("os", "")),
+            "screenSize": _number(first.get("screen_size_in")),
+            "refreshHz": _number(first.get("refresh_hz")),
+            "sources": sorted(source_rows["__source"].unique()),
+            "metadataReview": _text(first.get("metadata_review", "")),
+            "metadataSource": _text(first.get("metadata_source", "")),
+            "metadataReviewed": _text(first.get("metadata_reviewed", "")),
             "minutes": _number(row["minutes"]),
             "hours": _number(row["hours"]),
             "capacityWh": _number(row["capacityWh"]),

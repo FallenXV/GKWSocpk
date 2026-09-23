@@ -66,6 +66,11 @@
         <button type="button" role="tab" data-list="socs">Processors</button>
       </div>
 
+      <label class="switch" title="Lines of constant efficiency (score/W for CPU/GPU, W for batteries)">
+        <input type="checkbox" id="reference-toggle" checked>
+        <span>Efficiency reference</span>
+      </label>
+
       <label class="switch" id="measured-wrap" hidden>
         <input type="checkbox" id="measured-toggle" checked>
         <span>Geekerwan measured capacity</span>
@@ -108,14 +113,21 @@
         <span class="chart-note" id="chart-note"></span>
         <span class="rank-hint" id="rank-hint"></span>
       </footer>
+      <div class="reference-slot"><div class="chart-footer" id="reference-note" hidden></div></div>
     </section>
   </main>
+  <details class="analytics" id="analytics" open>
+    <summary>Analysis lab <span>Targets, trade-offs and baseline comparisons</span></summary>
+    <div id="analysis-controls" class="analysis-controls"></div>
+    <div id="analysis-results" aria-live="polite"></div>
+  </details>
 </div>
 
 <div class="toast" id="toast" hidden></div>
 
 <script src="colors.js"></script>
 <script src="chart.js"></script>
+<script src="analytics.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

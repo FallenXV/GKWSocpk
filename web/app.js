@@ -6,6 +6,11 @@
 
 const SOC_VIEWS = new Set(['SoC Average Power Draw', 'SoC Average Efficiency']);
 const SOC_TOGGLE_VIEWS = new Set(['Energy efficiency', 'Average power draw']);
+const REFERENCE_VIEWS = new Set(['Performance curve', 'Runtime vs capacity', 'Energy efficiency', 'Average power draw', 'SoC Average Power Draw']);
+// GPU efficiency varies less across architectures, so its rays sit closer.
+const EFFICIENCY_LEVELS = [1, 0.5, 0.25, 0.125];
+const GPU_EFFICIENCY_LEVELS = [1, 0.875, 0.75, 0.625, 0.5];
+const GPU_DATASETS = new Set(['GPU', 'Laptop GPU']);
 const CORE_GROUP_LABELS = { super: 'Super', large: 'Large', medium: 'Medium', small: 'Small' };
 
 const element = (id) => document.getElementById(id);
@@ -31,6 +36,8 @@ const ui = {
   listTabs: element('list-tabs'),
   searchLabel: element('search-label'),
   overlayToggle: element('overlay-toggle'),
+  referenceToggle: element('reference-toggle'),
+  referenceNote: element('reference-note'),
   overlayWrap: element('overlay-wrap'),
   measuredToggle: element('measured-toggle'),
   measuredWrap: element('measured-wrap'),
@@ -56,6 +63,7 @@ const state = {
   rankOffsets: {},
   colorMaps: new Map(),
   showMeasured: true,
+  showReference: true,
   showSocAverages: false,
   visible: [],
   lastRank: null,
@@ -84,8 +92,8 @@ function curveAxes(entry, view) {
 
 function batteryAxes(view) {
   if (view === 'Energy efficiency') {
-    return { xKey: 'avgPowerW', yKey: 'minPerWh', title: 'Efficiency sweet spot',
-             xLabel: 'Average power draw (W)', yLabel: 'Minutes per Wh',
+    return { xKey: 'capacityWh', yKey: 'minutes', title: 'Energy efficiency by battery size',
+             xLabel: 'Battery capacity (Wh)', yLabel: 'Runtime (minutes)',
              rankKey: 'minPerWh', rankLabel: 'Minutes per Wh', higher: true };
   }
   if (view === 'Average power draw') {
@@ -136,14 +144,15 @@ function figureGeometry(entry, view, list) {
     // Over a device chart the averages are full-width rules, so only their y
     // separates them, against the device chart's own range.
     const axes = batteryAxes(view);
-    const averageKeys = { avgPowerW: 'powerW', minPerWh: 'minPerWh', hours: 'runtimeHours' };
+    const averageKeys = { avgPowerW: 'powerW', minutes: 'minPerWh', hours: 'runtimeHours' };
     const devices = figureGeometry(entry, view, 'devices');
     const items = averages.map((average) => {
       const y = average[averageKeys[axes.yKey]];
       return {
         id: average.soc,
-        kind: 'hline',
-        points: [[devices.extent.x0, y], [devices.extent.x1, y]],
+        kind: axes.yKey === 'minutes' ? 'line' : 'hline',
+        points: [devices.extent.x0, devices.extent.x1].map((x) =>
+          [x, axes.yKey === 'minutes' ? x * y : y]),
       };
     });
     return { items, extent: extentOf([...devices.items, ...items]) };
@@ -367,9 +376,10 @@ function rankedIds(list) {
       .sort((left, right) => right.value - left.value)
       .map((item) => item.label);
   }
+  const metric = batteryAxes(view);
   return profiles
     .slice()
-    .sort((left, right) => (right.minPerWh || 0) - (left.minPerWh || 0))
+    .sort((left, right) => (metric.higher ? 1 : -1) * (right[metric.rankKey] - left[metric.rankKey]))
     .map((profile) => profile.label);
 }
 
@@ -546,6 +556,14 @@ function syncMeasuredToggle() {
   ui.measuredWrap.title = ui.measuredToggle.disabled
     ? 'The processor-average views plot no devices'
     : "Hollow diamonds for Geekerwan's measured usable capacity, joined to the pulled point";
+}
+
+function syncReferenceToggle() {
+  ui.referenceToggle.disabled = !REFERENCE_VIEWS.has(currentView());
+  ui.referenceToggle.checked = state.showReference && !ui.referenceToggle.disabled;
+  ui.referenceToggle.parentElement.title = ui.referenceToggle.disabled
+    ? 'This view has no equal-efficiency line; the ranking shows the best value'
+    : 'Equal-efficiency lines, or the low-power / large-battery Pareto frontier on power-draw views';
 }
 
 function syncOverlayToggle() {
@@ -755,15 +773,21 @@ function batteryScene(entry, profiles) {
   });
 
   const hlines = [];
+  const references = [];
   const showAverages = state.showSocAverages && SOC_TOGGLE_VIEWS.has(view);
   if (showAverages) {
-    const averageKeys = { avgPowerW: 'powerW', minPerWh: 'minPerWh', hours: 'runtimeHours' };
+    const averageKeys = { avgPowerW: 'powerW', minutes: 'minPerWh', hours: 'runtimeHours' };
     const socColors = colorMap('socs');
     const socs = selectedSocs(entry)
       .sort((left, right) => left.soc.localeCompare(right.soc, undefined, { sensitivity: 'base' }));
     socs.forEach((average) => {
       const value = average[averageKeys[yKey]];
       if (!Number.isFinite(value)) return;
+      if (yKey === 'minutes') {
+        references.push({ slope: value, intercept: 0, color: socColors.get(average.soc),
+          source: average.soc, text: `${average.soc} · ${fixed(value, 2)} min/Wh` });
+        return;
+      }
       hlines.push({
         y: value,
         color: socColors.get(average.soc),
@@ -780,6 +804,7 @@ function batteryScene(entry, profiles) {
   if (hlines.length) {
     legend.push({ text: 'Processor average (y-axis)', color: '#ffb15c', shape: 'dash' });
   }
+  references.forEach((line) => legend.push({ text: line.text, color: line.color, shape: 'dash' }));
 
   hoverPoints = points;
   const measuredNote = !matched
@@ -788,7 +813,7 @@ function batteryScene(entry, profiles) {
       ? `${matched} Geekerwan measured overlays`
       : `${matched} Geekerwan measured overlays hidden`;
   ui.chartNote.textContent = `${rows.toLocaleString()} battery tests shown · ${measuredNote}` +
-    (showAverages ? ` · ${hlines.length} processor averages` : '');
+    (showAverages ? ` · ${hlines.length + references.length} processor averages` : '');
 
   return {
     main: {
@@ -802,6 +827,7 @@ function batteryScene(entry, profiles) {
       connectors,
       labels,
       hlines,
+      references,
       legend: { items: legend, cols: 1 },
     },
     rank: {
@@ -902,6 +928,94 @@ function socAverageScene(entry) {
   };
 }
 
+/* Equal-efficiency guides: lines on which the chart's quality ratio is
+ * constant. Views whose axes already are that ratio, or whose best value the
+ * ranking panel states, get none. References never participate in data
+ * bounds, rankings or hover targets. */
+function addEfficiencyReference(scene, entry, profiles) {
+  ui.referenceNote.hidden = true;
+  ui.referenceNote.textContent = '';
+  const view = currentView();
+  if (!state.showReference || scene.main.message || !REFERENCE_VIEWS.has(view)) return;
+  if (entry.kind === 'curve') {
+    // Sorted power order makes equal efficiency ties prefer lower power.
+    const best = profiles.flatMap((profile) => profile.series.flatMap((series) =>
+      series.points.filter((p) => p.every(Number.isFinite) && p[0] > 0 && p[1] > 0)
+        .map((p) => ({ power: p[0], score: p[1], source: profile.label }))))
+      .sort((a, b) => a.power - b.power || b.score - a.score || a.source.localeCompare(b.source))
+      .reduce((top, p) => (!top || p.score / p.power > top.score / top.power ? p : top), null);
+    if (!best) return;
+    const perWatt = best.score / best.power;
+    const digits = perWatt >= 100 ? 0 : perWatt >= 10 ? 1 : 2;
+    const levels = GPU_DATASETS.has(entry.key) ? GPU_EFFICIENCY_LEVELS : EFFICIENCY_LEVELS;
+    scene.main.references = levels.map((level) => ({
+      slope: perWatt * level, intercept: 0, color: Chart.THEME.text,
+      width: level === 1 ? 2 : 1.2, dash: level === 1 ? [8, 5] : [3, 4],
+      alpha: level === 1 ? 0.9 : 0.45,
+      label: level === 1 ? `${fixed(perWatt, digits)}/W` : `${level * 100}%`,
+    }));
+    const text = `Equal efficiency · best ${fixed(perWatt, digits)} score/W`;
+    scene.main.legend ||= { items: [], cols: 1 };
+    scene.main.legend.items.push({ text, color: Chart.THEME.text, shape: 'dash' });
+    ui.referenceNote.textContent = `Rays through the origin hold score per watt constant. ` +
+      `Bold ray: best selected point, ${best.source} (${fixed(best.power, 2)} W, ` +
+      `${fixed(best.score, entry.scoreDecimals)} score); fainter rays: ${levels.slice(1).map((level) => `${level * 100}%`).join(', ')} of that efficiency. ` +
+      `A curve reaching a higher ray is more efficient there; a curve bending across lower rays shows diminishing returns.`;
+    ui.referenceNote.hidden = false;
+    return;
+  }
+  if (view === 'Average power draw' || view === 'SoC Average Power Draw') {
+    // Lower-right Pareto frontier: no other selected point has at least as
+    // much capacity at no more power. Descending capacity keeps only strict
+    // power improvements; ties prefer the larger battery, then the name.
+    const soc = view === 'SoC Average Power Draw';
+    let bestPower = Infinity;
+    const frontier = (soc ? selectedSocs(entry) : profiles)
+      .map((p) => ({ source: soc ? p.soc : p.label, capacity: p.capacityWh, power: soc ? p.powerW : p.avgPowerW }))
+      .filter((p) => Number.isFinite(p.capacity) && p.capacity > 0 && Number.isFinite(p.power) && p.power > 0)
+      .sort((a, b) => b.capacity - a.capacity || a.power - b.power || a.source.localeCompare(b.source))
+      .filter((p) => (p.power < bestPower ? (bestPower = p.power, true) : false))
+      .reverse();
+    if (!frontier.length || !scene.main.dots.length) return;
+    const text = 'Lowest draw for its battery size';
+    scene.main.references = [{ pts: frontier.map((p) => [p.capacity, p.power]),
+      color: Chart.THEME.text, text }, ...(scene.main.references || [])];
+    // Ring the frontier points; rings are decoration, not hover targets.
+    scene.main.dots.push(...frontier.map((p) => ({ x: p.capacity, y: p.power, r: 8.5,
+      stroke: Chart.THEME.text, lineWidth: 1.4, alpha: 0.85 })));
+    scene.main.legend ||= { items: [], cols: 1 };
+    scene.main.legend.items.push({ text, color: Chart.THEME.text, shape: 'dash' });
+    const names = frontier.map((p) => `${p.source} (${fixed(p.capacity, 1)} Wh, ${fixed(p.power, 2)} W)`);
+    const kind = soc ? 'processor averages' : 'phones';
+    ui.referenceNote.textContent = (frontier.length === 1
+      ? `${names[0]} has both the largest battery and the lowest draw of the selected ${kind}, so it beats every other point; there is no trade-off line to draw.`
+      : `Pareto frontier of ${frontier.length} selected ${kind}: none of the other selected points has a larger battery at lower power. ` +
+        `${names.join(' → ')}. Points above the line are beaten on both. Connects measured points only; no extrapolation.`) +
+      (soc ? '' : ' Uses advertised capacity.');
+    ui.referenceNote.hidden = false;
+    return;
+  }
+  // Use the advertised-capacity points consistently; measured overlays are
+  // a separate estimate and must not silently change the reference basis.
+  const best = profiles.filter((p) => Number.isFinite(p.capacityWh) && p.capacityWh > 0)
+    .map((p) => ({ source: p.label, value: p.avgPowerW }))
+    .filter((p) => Number.isFinite(p.value) && p.value > 0)
+    .sort((a, b) => a.value - b.value || a.source.localeCompare(b.source))[0];
+  if (!best || !scene.main.dots.length) return;
+  const runtime = view === 'Runtime vs capacity';
+  const slope = (runtime ? 1 : 60) / best.value;
+  const formula = runtime ? `runtime (h) = capacity (Wh) ÷ ${fixed(best.value, 2)} W`
+    : `runtime (min) = capacity (Wh) × 60 ÷ ${fixed(best.value, 2)} W`;
+  const text = `Best efficiency: ${fixed(best.value, 2)} W`;
+  const reference = { slope, intercept: 0, color: Chart.THEME.text, source: best.source, text };
+  scene.main.references = [reference, ...(scene.main.references || [])];
+  scene.main.legend ||= { items: [], cols: 1 };
+  scene.main.legend.items.push({ text: `${text} · ${shorten(best.source, 24)}`,
+    color: reference.color, shape: 'dash' });
+  ui.referenceNote.textContent = `${text} · ${best.source} (best selected phone · advertised capacity). ${formula}. Constant-efficiency extrapolation; not a measured prediction.`;
+  ui.referenceNote.hidden = false;
+}
+
 /* ---------- stats ---------- */
 
 function updateStats(entry, chosen) {
@@ -965,6 +1079,7 @@ function refresh() {
   renderProfileList();
   syncMeasuredToggle();
   syncOverlayToggle();
+  syncReferenceToggle();
 
   const chosen = selectedProfiles();
   const view = currentView();
@@ -985,9 +1100,11 @@ function refresh() {
     scene = batteryScene(entry, chosen);
   }
 
+  addEfficiencyReference(scene, entry, chosen);
   state.lastRank = scene.rank;
   surface.setScene(scene);
   updateStats(entry, chosen);
+  Analytics.render(entry, chosen, selectedSocs(entry), state.payload.generatedAt);
 
   const listed = activeList() === 'socs' ? entry.socAverages.length : entry.profiles.length;
   const picked = selection(state.key).size;
@@ -1065,6 +1182,7 @@ function exportName(extension) {
   const view = currentView();
   const deviceMode = mode(state.key, 'devices');
   const parts = ['socpk', entry.kicker, view, deviceMode];
+  parts.push(state.showReference ? 'best-efficiency' : 'no-reference');
   if (entry.coreGroups.length) {
     const filter = cores(state.key);
     parts.push(filter.groups.size ? 'groups-' + [...filter.groups].sort().join('-') : 'all-groups');
@@ -1122,6 +1240,177 @@ async function exportChart(format) {
   }
 }
 
+/* ---------- internal renderer invocation ----------
+ *
+ * This is deliberately browser-side: the chart scene is built here from the
+ * loaded payload and then passed to the same Chart.Surface used by the page.
+ * It gives an agent a deterministic way to request the chart image without
+ * creating a second renderer or silently substituting a server-side plot.
+ */
+
+function debugList(value, name) {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new Error(`[socpkDebug] ${name} must be an array of strings`);
+  }
+  return [...new Set(value)];
+}
+
+function debugMode(value, name) {
+  if (value === undefined) return null;
+  if (!['manual', 'top5', 'all', 'clear'].includes(value)) {
+    throw new Error(`[socpkDebug] ${name} must be manual, top5, all, or clear`);
+  }
+  return value;
+}
+
+function debugSelection(key, list, labels, available, name) {
+  const unknown = labels.filter((label) => !available.has(label));
+  if (unknown.length) {
+    throw new Error(`[socpkDebug] unknown ${name}: ${unknown.join(', ')}`);
+  }
+  const chosen = selection(key, list);
+  chosen.clear();
+  labels.forEach((label) => chosen.add(label));
+  setMode(key, 'manual', list);
+}
+
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+async function waitForDebugRender() {
+  // refresh() queues Surface.render(); the second frame also covers a pending
+  // ResizeObserver pass after a browser agent changes its viewport.
+  await nextFrame();
+  await nextFrame();
+  if (!surface.scene || surface.size.width < 40 || surface.size.height < 40) {
+    throw new Error(
+      '[socpkDebug] chart stage has no usable rendered size; open a visible dashboard viewport first',
+    );
+  }
+}
+
+async function blobDataUrl(blob) {
+  if (!blob) throw new Error('[socpkDebug] renderer returned no image data');
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return `data:${blob.type};base64,${btoa(binary)}`;
+}
+
+async function invokeDebugChart(spec = {}) {
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+    throw new Error('[socpkDebug] invocation must be an object');
+  }
+  if (!state.payload) throw new Error('[socpkDebug] dashboard data is not loaded yet');
+
+  const key = spec.dataset;
+  if (typeof key !== 'string' || !state.datasets.has(key)) {
+    throw new Error(`[socpkDebug] unknown dataset: ${String(key)}`);
+  }
+  const entry = state.datasets.get(key);
+  const view = spec.view;
+  if (typeof view !== 'string' || !entry.views.includes(view)) {
+    throw new Error(`[socpkDebug] unknown view for ${key}: ${String(view)}`);
+  }
+
+  const profiles = debugList(spec.profiles, 'profiles');
+  const processors = debugList(spec.processors, 'processors');
+  const deviceMode = debugMode(spec.deviceMode, 'deviceMode');
+  const processorMode = debugMode(spec.processorMode, 'processorMode');
+  const list = spec.list || (SOC_VIEWS.has(view) && processors !== null ? 'socs' : 'devices');
+  if (!['devices', 'socs'].includes(list)) {
+    throw new Error('[socpkDebug] list must be devices or socs');
+  }
+  if (list === 'socs' && !hasSocList(entry)) {
+    throw new Error(`[socpkDebug] ${key} has no processor-average list`);
+  }
+  const coreGroups = debugList(spec.coreGroups, 'coreGroups');
+  const coreNames = debugList(spec.coreNames, 'coreNames');
+  const validGroups = new Set(entry.coreGroups || []);
+  const validCoreNames = new Set(entry.coreNames || []);
+  if (coreGroups && coreGroups.some((group) => !validGroups.has(group))) {
+    throw new Error(`[socpkDebug] unknown core group in ${key}`);
+  }
+  if (coreNames && coreNames.some((name) => !validCoreNames.has(name))) {
+    throw new Error(`[socpkDebug] unknown core name in ${key}`);
+  }
+
+  if (spec.format !== undefined && !['png', 'svg'].includes(spec.format)) {
+    throw new Error('[socpkDebug] format must be png or svg');
+  }
+  const format = spec.format || 'png';
+  const scale = spec.scale === undefined ? 2 : Number(spec.scale);
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 4) {
+    throw new Error('[socpkDebug] scale must be a number greater than 0 and no greater than 4');
+  }
+  if (spec.rankOffset !== undefined &&
+      (!Number.isInteger(spec.rankOffset) || spec.rankOffset < 0)) {
+    throw new Error('[socpkDebug] rankOffset must be a non-negative integer');
+  }
+
+  state.views[key] = view;
+  state.lists[key] = list;
+  if (coreGroups !== null || coreNames !== null) {
+    const filter = cores(key);
+    filter.groups = new Set(coreGroups || []);
+    filter.names = new Set(coreNames || []);
+  }
+  if (spec.deviceSearch !== undefined) state.searches.devices[key] = String(spec.deviceSearch);
+  if (spec.processorSearch !== undefined) state.searches.socs[key] = String(spec.processorSearch);
+  if (spec.showMeasured !== undefined) state.showMeasured = Boolean(spec.showMeasured);
+  if (spec.showSocAverages !== undefined) state.showSocAverages = Boolean(spec.showSocAverages);
+  if (spec.rankOffset !== undefined) state.rankOffsets[key] = spec.rankOffset;
+
+  if (profiles !== null) {
+    if (!entry.available) throw new Error(`[socpkDebug] ${key} has no loaded data`);
+    debugSelection(key, 'devices', profiles,
+      new Set(entry.profiles.map((profile) => profile.label)), 'profiles');
+  } else if (deviceMode) {
+    setMode(key, deviceMode, 'devices');
+  }
+  if (processors !== null) {
+    if (!entry.available) throw new Error(`[socpkDebug] ${key} has no loaded data`);
+    debugSelection(key, 'socs', processors,
+      new Set((entry.socAverages || []).map((average) => average.soc)), 'processors');
+  } else if (processorMode) {
+    setMode(key, processorMode, 'socs');
+  }
+
+  setDataset(key);
+  await waitForDebugRender();
+
+  let dataUrl;
+  let svg;
+  if (format === 'svg') {
+    svg = surface.toSvg();
+    dataUrl = await blobDataUrl(new Blob([svg], { type: 'image/svg+xml' }));
+  } else {
+    dataUrl = await blobDataUrl(await surface.toPngBlob(scale));
+  }
+  return {
+    dataset: key,
+    view,
+    format,
+    filename: exportName(format),
+    width: surface.size.width,
+    height: surface.size.height,
+    dataUrl,
+    ...(svg === undefined ? {} : { svg }),
+  };
+}
+
+// Deliberately internal and browser-local. Agents can await `ready`, then
+// call `window.__socpkDebug.invoke({...})` in the dashboard page.
+window.__socpkDebug = {
+  ready: null,
+  invoke: invokeDebugChart,
+  capture: invokeDebugChart,
+};
+
 /* ---------- events ---------- */
 
 ui.view.addEventListener('change', () => {
@@ -1173,6 +1462,11 @@ ui.profileList.addEventListener('click', (event) => {
     if (chosen.has(id)) chosen.delete(id); else chosen.add(id);
   }
   lastClickedIndex = index;
+  refresh();
+});
+
+ui.referenceToggle.addEventListener('change', () => {
+  state.showReference = ui.referenceToggle.checked;
   refresh();
 });
 
@@ -1266,4 +1560,4 @@ window.addEventListener('hashchange', () => {
   if (key && key !== state.key) setDataset(key);
 });
 
-load('/api/data');
+window.__socpkDebug.ready = load('/api/data');

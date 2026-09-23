@@ -117,6 +117,11 @@ def choose_phone_url(brand: str, model: str, candidates: Iterable[tuple[str, str
     scored.sort(reverse=True)
     if not scored or scored[0][0] < 0.91:
         return None
+    # Region suffixes are intentionally removed by _model_forms, so two
+    # different catalog pages can both be exact matches.  Do not turn that
+    # uncertainty into a URL choice based on lexical ordering.
+    if len({url for score, url in scored if score == 1.0}) > 1:
+        return None
     if len(scored) > 1 and scored[0][0] < 0.98 and scored[0][0] - scored[1][0] < 0.04:
         return None
     return scored[0][1]

@@ -108,7 +108,8 @@ Pearson correlations against efficiency.
 Use `--auto-soc` to resolve phone models through GSMArena's manufacturer
 catalogs and add `soc` to the snapshot. Lookups are deliberately opt-in,
 polite, and cached in `.gsm_cache/`; `--auto-soc --spec-offline` reuses only
-the cache. Alongside each resolved SoC, the CSV stores its device count and
+the cache. Cache filenames include a digest of the lookup key so localized or
+region-qualified models cannot overwrite one another. Alongside each resolved SoC, the CSV stores its device count and
 precomputed mean capacity, average power, minutes/Wh, and runtime for that
 snapshot. Manual `--spec` mappings are applied first and remain useful for
 regional models that a catalog cannot match safely.
@@ -149,6 +150,14 @@ benchmark, view, selection mode, and applied core/search filters; manual
 selections include a profile signature. The SVG is generated from the same
 draw pass as the on-screen chart, so the two match; for PDF, print the
 exported SVG from a browser. The Tk fallback still exports PDF directly.
+
+For internal visual debugging, a browser agent can use the renderer directly
+after the page loads. Await `window.__socpkDebug.ready`, then invoke for
+example `window.__socpkDebug.capture({dataset: "CPU", view: "Performance curve",
+profiles: ["A19 Pro"], format: "png"})`. The result contains a `dataUrl`,
+dimensions, and the generated filename. This API fails if the dataset/view is
+invalid or the chart has no visible render size; it does not substitute a
+different plotting implementation.
 
 Search by chip or core name, and multi-select profiles from the list —
 click to toggle, shift-click for a range. Top 5 and All shown stay active as
@@ -199,6 +208,45 @@ places processor averages appear:
 - The **SoC Average Power Draw** and **SoC Average Efficiency** views plot and
   rank the selected processors. Processors start on All shown, so these views
   still survey the whole loaded battery dataset until the list is narrowed.
+
+The web dashboard's **Pareto / efficiency reference** switch is on by default.
+References update with selection and filtering, without changing the axis bounds
+or chart size. They are clipped at the existing plot edges:
+
+- Battery **Energy efficiency** plots runtime in minutes against capacity and
+  uses `minutes = capacity Wh × 60 / lowest selected average W`. At 2 W, the
+  line passes through 300 minutes at 10 Wh and 600 minutes at 20 Wh. Rankings
+  still compare minutes/Wh. **Runtime vs capacity** shows the same scaling in
+  hours. References
+  use advertised-capacity points; measured-capacity overlays retain actual runtime.
+  Processor overlays in Energy efficiency multiply mean minutes/Wh by capacity.
+- **Average power draw** and **SoC Average Power Draw** use an equal-runtime
+  line, `power W = capacity Wh / target hours`, with the highest selected runtime
+  as the target. For processors this is the highest selected mean observed
+  runtime. A 10-hour line passes through 10 Wh at 1 W and 20 Wh at 2 W. Below
+  the line means a longer capacity/power runtime, rather than a correlation
+  between capacity and power. Mean capacity divided by mean power can differ
+  from mean observed runtime, so a processor's source point need not lie on its
+  target line. **SoC Average Efficiency** retains the highest selected mean
+  minutes/Wh reference.
+- CPU/GPU **Performance curve** uses a straight **Performance Pareto reference**
+  through the two highest-scoring non-dominated selected samples. A sample is
+  excluded if another provides at least as much score for no more power, with
+  one strict improvement; equal-score ties prefer lower power. This focuses
+  the guide on high-end performance without using score/W to choose its anchors.
+  Efficiency views retain their ideal-scaling guide through the highest score/W
+  sample and the highest-score sample, breaking ties by lower power.
+  Each view draws the straight line through its two anchors
+  in its own coordinates, clipped to the existing plot. It is a visual comparison,
+  not a physical model or a guarantee of attainable performance. It does not
+  assume peak score/W holds at higher power. If there are fewer than two valid
+  distinct anchors, the line is omitted with an explanation. Other samples
+  may happen to be collinear with them.
+
+The note below the chart explains the reference; battery notes include the source
+and formula. Battery extrapolations assume constant consumption, rather than
+predicting a measured result. References appear in PNG/SVG exports without
+affecting rankings, hover samples, or point counts. Empty selections have no line.
 
 Each list keeps its own search text, picks and latched mode, so narrowing
 processors never disturbs the device comparison. Old battery CSVs without
@@ -273,3 +321,80 @@ schemas and keeps each SPEC core separate.
 
 `Performance Benchmark\soc_curve_gui.py` is a launcher kept for older commands
 and starts the Tk fallback dashboard, the same as `socpk_gui.py`.
+
+
+## Analysis lab
+
+Click any table column heading to sort ascending; click again for descending.
+Sorting updates automatically when targets, filters or selections change, and
+is remembered separately for each table and dataset. Missing results stay last;
+ranges sort by their lower bound, then upper bound. **Clear sort** restores the
+default order for all analysis tables in the current dataset. CSV exports follow
+the displayed order.
+
+The expandable **Analysis lab** below the web chart uses the selected device
+profiles. Settings are retained independently per benchmark. Its filters apply
+only to the analysis panel; processor distributions also respect the Processors
+selection. Use **Export analysis CSV** to retain the displayed tables, settings,
+source filenames and snapshot load time. Chart PNG/SVG export remains separate.
+
+For CPU/GPU datasets:
+
+- **Equal power / performance** compares score at a chosen wattage and minimum
+  power at a target score, with percentage differences against a baseline.
+- **Power trade-offs** reports power for 80%, 90%, 95% and 100% of each profile's
+  published peak, including the extra watts needed for the final 10%.
+- **Published-point frontier** retains points with no other selected point offering
+  at least the same score at no greater power, with one strict improvement.
+- **Baseline / generation comparison** plots relative performance over shared
+  power ranges and identifies equal-score crossings. Select an older generation
+  as baseline to compare its successor within the same benchmark.
+
+Interpolation is piecewise linear between adjacent published power points.
+Every target estimate includes its bracket and power gap. No extrapolation is
+performed. Published points may themselves be fitted upstream; sparse gaps do
+not imply measured intermediate performance. Conflicting duplicate powers and
+multiple source series are not silently blended. Inverting a nonmonotonic curve
+returns the lowest bracketed power reaching the requested score. These analyses
+do not measure sustained performance or thermal throttling.
+
+For batteries, **Phone power grouped by processor** shows mean, median, observed
+range, device-profile/brand counts, individual devices and leave-one-brand-out
+sensitivity. Brand and screen-size/refresh filters permit narrower cohorts;
+missing metadata is excluded when that filter is active. Repeated OS profiles
+are not independent devices and observed spread is not a confidence interval.
+
+**Runtime / generation comparison** decomposes the runtime ratio into capacity
+ratio times inverse power ratio. Choose comparable product families and sizes
+manually; software and other hardware differences remain. The common-battery
+scenario defaults to 20 Wh and holds estimated consumption constant. For a
+profile aggregating several rows, decomposition uses mean capacity divided by
+mean runtime so the ratio identity remains exact. Battery-imprint Wh is always
+the energy basis; measured-mAh overlays do not enter these calculations.
+
+`battery_metadata.json` records the reviewed September 2026 metadata corrections
+and their provenance. The collector and web payload apply the shared overlay in
+`battery_metadata.py`, leaving historical CSVs, battery energy and runtimes intact.
+Known ambiguous processor assignments remain unassigned rather than falling
+back to the original chipset string. The web device table exposes review sources.
+The Tk fallback does not acquire the new analysis panel or overlay when loading
+old snapshots; newly collected snapshots already contain reviewed metadata.
+
+The standalone `curve_analysis.py --input <csv> --save` now writes
+`curve_summary.csv` with power bounds and means integrated over the shared power
+interval. It integrates score/W analytically from piecewise-linear score curves,
+so inserting collinear points cannot change the result. Disjoint ranges,
+conflicting duplicate powers, nonpositive values and singleton curves fail with
+an explanation rather than yielding a misleading average.
+
+
+## Checking changes
+
+```sh
+python tests/smoke.py
+```
+
+Compiles every Python and JavaScript source, starts the dashboard in-process
+against the local snapshots, and checks the page assets, `/api/data`, and
+`/api/reload`. It prints `SMOKE OK` or the failures and writes nothing to disk.
+It does not click through the UI; check behaviour changes in the browser.

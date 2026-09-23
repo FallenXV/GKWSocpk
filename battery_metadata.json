@@ -1,0 +1,155 @@
+[
+  {
+    "brand": "小米",
+    "model": "17",
+    "fields": {
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "screen_size_in": 6.3,
+      "resolution_px_w": 1220,
+      "resolution_px_h": 2656,
+      "refresh_hz": 120
+    },
+    "reason": "Wrong Redmi 17 match",
+    "source": "https://www.mi.com/sg/product/xiaomi-17/specs/",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "小米",
+    "model": "15",
+    "fields": {
+      "soc": "Snapdragon 8 Elite",
+      "screen_size_in": 6.36,
+      "resolution_px_w": 1200,
+      "resolution_px_h": 2670,
+      "refresh_hz": 120
+    },
+    "reason": "OnePlus 15 cache collision and Redmi 15 URL",
+    "source": "https://www.mi.com/global/product/xiaomi-15/specs/",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "OPPO",
+    "model": "Find X9",
+    "fields": {
+      "soc": "Dimensity 9500",
+      "screen_size_in": 6.59,
+      "resolution_px_w": 1256,
+      "resolution_px_h": 2760,
+      "refresh_hz": 120
+    },
+    "reason": "Wrong Find X9s match",
+    "source": "https://www.oppo.com/cn/smartphones/series-find-x/find-x9/specs/",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "OPPO",
+    "model": "Find X9 Pro",
+    "fields": {
+      "soc": "Dimensity 9500",
+      "screen_size_in": 6.78,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2772,
+      "refresh_hz": 120
+    },
+    "reason": "Wrong Find X9s Pro match",
+    "source": "https://www.oppo.com/cn/smartphones/series-find-x/find-x9-pro/specs/",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "一加",
+    "model": "Ace6",
+    "fields": {
+      "soc": "Snapdragon 8 Elite",
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2800,
+      "refresh_hz": 165
+    },
+    "reason": "Ace 6 Ultra cache collision",
+    "source": "https://www.oneplus.com/cn/ace-6",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "红米",
+    "model": "K90",
+    "fields": {
+      "screen_size_in": 6.59,
+      "resolution_px_w": 1156,
+      "resolution_px_h": 2510,
+      "refresh_hz": 120
+    },
+    "reason": "K90 Ultra cache collision",
+    "source": "https://www.antutu.com/doc/136907.htm",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "红米",
+    "model": "K90 Pro Max",
+    "fields": {
+      "refresh_hz": 120
+    },
+    "reason": "PWM frequency parsed as refresh rate",
+    "source": ".gsm_cache/phone__k90_pro_max.html",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "小米",
+    "model": "17 Pro",
+    "fields": {
+      "refresh_hz": 120
+    },
+    "reason": "PWM frequency parsed as refresh rate",
+    "source": ".gsm_cache/phone__17_pro.html",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "小米",
+    "model": "17 Pro Max",
+    "fields": {
+      "refresh_hz": 120
+    },
+    "reason": "PWM frequency parsed as refresh rate",
+    "source": ".gsm_cache/phone__17_pro_max.html",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "苹果",
+    "model": "iPhone 16",
+    "fields": {
+      "refresh_hz": 60
+    },
+    "reason": "Missing refresh rate",
+    "source": "https://www.dxomark.com/apple-iphone-16-display-test/",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "华为",
+    "model": "Pura 90",
+    "fields": {
+      "soc": "Kirin 9010S"
+    },
+    "reason": "Normalise 9010s/9010S case",
+    "source": ".gsm_cache/phone__pura_90.html",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "三星",
+    "model": "S26",
+    "fields": {
+      "soc": null
+    },
+    "reason": "Tested Snapdragon/Exynos variant unidentified",
+    "source": ".gsm_cache/phone__s26.html",
+    "reviewed": "2026-09-22"
+  },
+  {
+    "brand": "华为",
+    "model": "Mate 80 Pro",
+    "fields": {
+      "soc": null
+    },
+    "reason": "Tested Kirin 9030/9030 Pro variant unidentified",
+    "source": ".gsm_cache/phone__mate_80_pro.html",
+    "reviewed": "2026-09-22"
+  }
+]
