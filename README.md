@@ -1,392 +1,208 @@
 # GKWSocpk
 
-Scrapes socpk.com for battery life and efficiency results, exports them as CSV
-snapshots, and compares the snapshots in a local web dashboard.
+Scrapes [socpk.com](https://socpk.com) CPU, GPU and battery results into CSV
+snapshots and compares them in a local web dashboard.
 
-Apple SoCs publish only a few points, so their curves may not represent the
-real efficiency curve.
+![Dashboard](docs/images/dashboard.png)
 
 This is a personal project, not affiliated with socpk.com. Respect the site's
 terms of service when using it.
 
-## Requirements
+## Setup
 
-Python 3.13. The web dashboard needs only a browser; the Tk fallback
-dashboard additionally needs a Python build with Tk support.
-
-Create and activate a virtual environment, then install dependencies:
+Python 3.13.
 
 ```powershell
 py -3.13 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1          # bash/macOS: source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-On bash/WSL, activate with `source .venv/bin/activate`.
+`requirements.lock.txt` pins a known-good environment if you need an exact
+reproduction.
 
-`requirements.txt` lists the direct dependencies. `requirements.lock.txt` is a
-`pip freeze` of a known-good resolution; install from it to reproduce that
-exact environment.
-
-## Collecting data
-
-With the venv active:
+## 1. Collect data
 
 ```powershell
-python Battery\battery_parser.py
+python Battery\battery_parser.py --auto-soc
 python "Performance Benchmark\cpu_curve_parser.py" --benchmark all
 python "Performance Benchmark\gpu_curve_parser.py"
 python "Performance Benchmark\laptop_gpu_curve_parser.py"
 ```
 
-The parsers read SoCPK's September 2026 chart API, including its binary point
-format and both current tokenless and legacy token-protected data responses. No
-browser or extra dependencies are required. Each poll fetches fresh data and
-retries once if a legacy token expires or the chart changes between requests.
-Legacy battery JS sources and explicitly supplied SVG base URLs also work.
-
-Exports go to `snapshots/` relative to the working directory:
+Snapshots are written to `snapshots/`:
 
 | File | Contents |
 | --- | --- |
 | `cpu_gb6_curves.csv` | Geekbench 6 multi-core |
 | `cpu_gb7_curves.csv` | Geekbench 7 multi-core |
-| `cpu_spec2026_int_curves.csv` | SPEC CPU 2026 single-core integer |
-| `cpu_spec2026_fp_curves.csv` | SPEC CPU 2026 single-core floating-point |
-| `gpu_snl_curves.csv` | Phone GPU, Steel Nomad Light |
-| `laptop_gpu_curves.csv` | Laptop GPU, Time Spy |
-| `battery_results.csv` | Battery test 5.0 runtime, rated Wh, efficiency |
+| `cpu_spec2026_int_curves.csv` | SPEC CPU 2026 integer, per core |
+| `cpu_spec2026_fp_curves.csv` | SPEC CPU 2026 floating-point, per core |
+| `gpu_snl_curves.csv` | Phone GPU, 3DMark Steel Nomad Light |
+| `laptop_gpu_curves.csv` | Laptop GPU, 3DMark Time Spy |
+| `battery_results.csv` | Battery test 5.0 runtime, capacity and power |
 
-Exports never overwrite an existing file, including paths given with
-`--output`, `--csv`, or `--json`. If the path is taken, the export writes a
-sibling with a UTC timestamp, so a sparse result cannot replace historical
-data. An empty curve result writes no file, and a failed write deletes the
-partial snapshot. Each script prints the path it wrote.
+Existing files are never overwritten. If a name is already taken, the new
+snapshot gets a timestamp suffix, and the dashboard loads the newest one.
 
-Curve exports keep the API's published points, which may include fitted
-curves, and interpolate nothing. Names use the site's English name where one
-exists. CLI abbreviations such as `SD8 Gen3` resolve when they identify a
-single current series.
+Useful options:
 
-### CPU benchmarks
+- **CPU:** `--benchmark GB6|GB7|SPEC2026_INT|SPEC2026_FP|all`, `--cpus "A19 Pro"`,
+  `--core-group super|large|medium|small`
+- **GPU:** `--gpus` to limit which GPUs are scraped
+- **Battery:** `--auto-soc` looks up each phone's processor on GSMArena and caches
+  the result in `.gsm_cache/`. `--spec-offline` reuses only that cache, and
+  `--spec 'Brand|Model=url'` fixes a single phone by hand.
 
-Each benchmark has its own score column and its own dashboard tab:
-`GB6_Multi_Score`, `GB7_Multi_Score`, `SPEC2026_INT_Score`, and
-`SPEC2026_FP_Score`. SPEC snapshots also carry `Core`, `Core_Group`, and
-`Core_Variant`, which keep different cores of one chip as separate profiles.
-Scores and score/W keep their fractional precision; the dashboard prints SPEC
-values to three decimals.
+Run any script with `--help` for the full list of options.
 
-`--benchmark all` polls both CPU source pages once and writes four snapshots.
-Without `--benchmark`, the parser exports GB6. To collect one benchmark or one
-core group:
-
-```powershell
-python "Performance Benchmark\cpu_curve_parser.py" --benchmark GB7
-python "Performance Benchmark\cpu_curve_parser.py" --benchmark SPEC2026_INT --cpus "A19 Pro"
-python "Performance Benchmark\cpu_curve_parser.py" --benchmark SPEC2026_FP --core-group medium
-```
-
-`--output-dir` applies to `--benchmark all`; `--output` applies to a single
-benchmark. Core groups are the site's `super`, `large`, `medium`, and `small`.
-Naming a chip for SPEC pulls all of its published cores unless `--core-group`
-narrows them.
-
-### GPU and battery parsers
-
-`gpu_curve_parser.py` and `laptop_gpu_curve_parser.py` take `--gpus` to limit
-the scrape and `--output` to set the snapshot path; both discover every
-published GPU when `--gpus` is omitted.
-
-`battery_parser.py` takes `--site` to pick the battery dataset (default 5.0),
-`--url` to override source URLs, `--csv` and `--json` for snapshot paths, and
-`--brand-lang source|en` for output brand names. GSMArena enrichment uses
-`--spec 'Brand|Model=url'`, `--spec-map-json`, and `--spec-offline` for
-cache-only runs. `--preview` prints an enriched table and `--correlate` prints
-Pearson correlations against efficiency.
-
-Use `--auto-soc` to resolve phone models through GSMArena's manufacturer
-catalogs and add `soc` to the snapshot. Lookups are deliberately opt-in,
-polite, and cached in `.gsm_cache/`; `--auto-soc --spec-offline` reuses only
-the cache. Cache filenames include a digest of the lookup key so localized or
-region-qualified models cannot overwrite one another. Alongside each resolved SoC, the CSV stores its device count and
-precomputed mean capacity, average power, minutes/Wh, and runtime for that
-snapshot. Manual `--spec` mappings are applied first and remain useful for
-regional models that a catalog cannot match safely.
-
-```powershell
-python Battery\battery_parser.py --auto-soc
-```
-
-## Dashboard
+## 2. Open the dashboard
 
 ```powershell
 python socpk_web.py
 ```
 
-This starts a local server, prints its address, and opens the dashboard in
-your browser. Data is read once and sent to the page as JSON, so filtering,
-hovering and redrawing happen in the browser with no round trip to Python.
-Nothing is uploaded: the server binds to `127.0.0.1` and only serves files
-from `web/` plus the loaded snapshots. Stop it with Ctrl-C.
+This opens the dashboard in your browser. It runs only on `127.0.0.1`, and
+nothing is uploaded. Stop it with Ctrl-C.
 
-`socpk_gui.py` remains as a Tk fallback with the same datasets and views. It
-is kept for environments without a usable browser; on macOS its Tk canvas is
-noticeably slower than the web dashboard. Both front ends load snapshots
-through the shared `socpk_data.py`, so they always agree on what a CSV means.
+Each tab is one dataset: GB6 MULTI, GB7 MULTI, SPEC26 INT, SPEC26 FP, GPU,
+LAPTOP GPU and BATTERY. Pick a chart from **Compare**, then choose profiles in
+the list on the left. You can click to toggle a profile, shift-click to select a
+range, or use **Top 5**, **All shown** and **Clear**. Every chart has a ranking
+panel on its right, and hovering over a point shows its details. **Export chart**
+saves the chart as PNG or SVG.
 
-The dashboard scans the project folder for recognized CPU, GPU, and battery
-CSVs. Timestamped siblings are treated as one snapshot family and only the
-newest is loaded automatically. Tabs switch datasets: GB6 MULTI, GB7 MULTI, SPEC26 INT,
-SPEC26 FP, GPU, LAPTOP GPU, and BATTERY. A tab with no snapshot yet stays
-dimmed and names the collector command to run. Rankings and comparisons stay
-within the selected tab. Curve tabs chart an efficiency curve, a performance
-curve, or efficiency vs score; battery tabs chart runtime vs capacity, energy
-efficiency, or average power draw. Chart titles identify the benchmark source,
-with the profile note beside the title.
+The **Efficiency reference** switch draws the dashed guide lines described
+below. The note under the chart explains the line currently shown.
 
-Export the current chart as PNG or SVG. Suggested filenames include the
-benchmark, view, selection mode, and applied core/search filters; manual
-selections include a profile signature. The SVG is generated from the same
-draw pass as the on-screen chart, so the two match; for PDF, print the
-exported SVG from a browser. The Tk fallback still exports PDF directly.
+## Performance charts (CPU and GPU)
 
-For internal visual debugging, a browser agent can use the renderer directly
-after the page loads. Await `window.__socpkDebug.ready`, then invoke for
-example `window.__socpkDebug.capture({dataset: "CPU", view: "Performance curve",
-profiles: ["A19 Pro"], format: "png"})`. The result contains a `dataUrl`,
-dimensions, and the generated filename. This API fails if the dataset/view is
-invalid or the chart has no visible render size; it does not substitute a
-different plotting implementation.
+All six CPU and GPU tabs offer the same three charts. Each curve is one chip,
+or one core on the SPEC tabs.
 
-Search by chip or core name, and multi-select profiles from the list —
-click to toggle, shift-click for a range. Top 5 and All shown stay active as
-filters, search, and chart views change. Top 5 ranks matching profiles using
-the current chart metric. Picking profiles manually releases the automatic
-selection mode; Clear keeps the selection empty until another choice is made.
+| Performance curve | Efficiency curve | Efficiency vs score |
+| --- | --- | --- |
+| ![](docs/images/cpu-performance-curve.png) | ![](docs/images/cpu-efficiency-curve.png) | ![](docs/images/cpu-efficiency-vs-score.png) |
+| Score vs power (W) | Score per watt vs power (W) | Score per watt vs score |
+| Ranked by peak score | Ranked by peak score/W | Ranked by peak score/W |
 
-SPEC tabs add a FILTER CORES panel below those buttons. The Super, Large,
-Medium, and Small buttons toggle core groups, and the core-name menu supports
-multiple checked names. Matches within each field are combined; a profile
-must match both the groups and names selected. All clears the core filters.
-Filters, selection modes, the chosen view, and the search text are kept
-independently for each benchmark, so switching tabs and back restores context.
+- **Performance curve:** how much performance a chip delivers at each power
+  level. Higher and further to the left is better. The dashed rays from the
+  origin mark constant score per watt. The bold ray passes through the best
+  selected point, and the faint rays mark 50%, 25% and 12.5% of that efficiency.
+- **Efficiency curve:** how efficiency changes as power rises. It usually peaks
+  at low power and falls as the chip is pushed harder.
+- **Efficiency vs score:** the efficiency needed to reach a given score. It is
+  the most direct way to compare chips at equal performance.
 
-Each profile's colour is fixed for a figure before anything is drawn, so
-selecting or deselecting devices never recolours the ones still on screen.
-Where there are more profiles than palette entries some colours must repeat;
-which ones repeat is chosen per figure from the profiles' positions on it, so
-a repeat falls between two marks that are already far apart. Because the
-assignment follows the geometry, a profile can take a different colour in a
-different view of the same dataset.
+The points are the values SoCPK publishes, and some of them are fitted upstream.
+Apple chips publish only a few points each, so their curves are sparse.
 
-Curve legends show the chip and core name; the leader card and hover details
-retain core types. Dotted lines join two or three sparse SPEC samples from the
-same core and source without adding interpolated data points. Hovering near a
-point shows a crosshair and its full details; scrolling over the ranking panel
-pages through profiles beyond the ones on screen.
+On SPEC tabs, **Filter cores** narrows the list by core group (Super, Large,
+Medium, Small) or by core name.
 
-Battery charts show the pulled SoCPK points and overlay Geekerwan's static
-measured usable-capacity results where a device matches. Hollow diamonds mark
-the measured values; the measured Wh point scales the pulled Wh capacity by
-`measured mAh / advertised mAh`. The overlays do not affect the CSV data or
-the rankings. The Devices tab carries a **Geekerwan measured capacity** switch
-that turns them off; it is on by default and appears only when a loaded device
-matches the table. The Tk fallback always draws them.
+## Battery charts
 
-When the battery CSV carries `soc`, the Battery tab's left panel gains
-**Devices** and **Processors** tabs. Processors lists every resolved processor
-with the number of device profiles behind its average, and the search box,
-Top 5, All shown and Clear act on whichever list is showing; Top 5 ranks
-processors by the metric the current chart uses. That selection drives both
-places processor averages appear:
+Every phone has one runtime from SoCPK's battery test 5.0 and one battery
+capacity in Wh, taken from the battery imprint. The charts derive two numbers
+from these:
 
-- The **Overlay average lines** switch above the list draws a labelled
-  reference line per selected processor on the Energy efficiency and Average
-  power draw views. It is off by default and unavailable on the other views,
-  which either have no matching average or already plot the averages.
-- The **SoC Average Power Draw** and **SoC Average Efficiency** views plot and
-  rank the selected processors. Processors start on All shown, so these views
-  still survey the whole loaded battery dataset until the list is narrowed.
+- **Average power (W)** = capacity (Wh) ÷ runtime (h). Lower is better.
+- **Efficiency (min/Wh)** = runtime (minutes) ÷ capacity (Wh). Higher is better.
 
-The web dashboard's **Pareto / efficiency reference** switch is on by default.
-References update with selection and filtering, without changing the axis bounds
-or chart size. They are clipped at the existing plot edges:
+These figures describe the whole phone, including the screen, modem and
+software, and not the chip alone.
 
-- Battery **Energy efficiency** plots runtime in minutes against capacity and
-  uses `minutes = capacity Wh × 60 / lowest selected average W`. At 2 W, the
-  line passes through 300 minutes at 10 Wh and 600 minutes at 20 Wh. Rankings
-  still compare minutes/Wh. **Runtime vs capacity** shows the same scaling in
-  hours. References
-  use advertised-capacity points; measured-capacity overlays retain actual runtime.
-  Processor overlays in Energy efficiency multiply mean minutes/Wh by capacity.
-- **Average power draw** and **SoC Average Power Draw** use an equal-runtime
-  line, `power W = capacity Wh / target hours`, with the highest selected runtime
-  as the target. For processors this is the highest selected mean observed
-  runtime. A 10-hour line passes through 10 Wh at 1 W and 20 Wh at 2 W. Below
-  the line means a longer capacity/power runtime, rather than a correlation
-  between capacity and power. Mean capacity divided by mean power can differ
-  from mean observed runtime, so a processor's source point need not lie on its
-  target line. **SoC Average Efficiency** retains the highest selected mean
-  minutes/Wh reference.
-- CPU/GPU **Performance curve** uses a straight **Performance Pareto reference**
-  through the two highest-scoring non-dominated selected samples. A sample is
-  excluded if another provides at least as much score for no more power, with
-  one strict improvement; equal-score ties prefer lower power. This focuses
-  the guide on high-end performance without using score/W to choose its anchors.
-  Efficiency views retain their ideal-scaling guide through the highest score/W
-  sample and the highest-score sample, breaking ties by lower power.
-  Each view draws the straight line through its two anchors
-  in its own coordinates, clipped to the existing plot. It is a visual comparison,
-  not a physical model or a guarantee of attainable performance. It does not
-  assume peak score/W holds at higher power. If there are fewer than two valid
-  distinct anchors, the line is omitted with an explanation. Other samples
-  may happen to be collinear with them.
+On the device charts, hollow diamonds show Geekerwan's measured usable
+capacity where it is available, joined to the SoCPK point by a dotted line. These
+measurements are for reference only and never affect the rankings. Turn them
+off with **Geekerwan measured capacity**.
 
-The note below the chart explains the reference; battery notes include the source
-and formula. Battery extrapolations assume constant consumption, rather than
-predicting a measured result. References appear in PNG/SVG exports without
-affecting rankings, hover samples, or point counts. Empty selections have no line.
+### Runtime vs capacity
 
-Each list keeps its own search text, picks and latched mode, so narrowing
-processors never disturbs the device comparison. Old battery CSVs without
-`soc` remain loadable and simply show no Processors tab. The Tk fallback keeps
-its original **SoC averages** checkbox beside the data-point count, which
-overlays the averages of the processors behind the selected devices.
+![Runtime vs capacity](docs/images/battery-runtime-vs-capacity.png)
 
-Keyboard: `[` and `]` move between tabs, `/` focuses the search box. The
-address bar carries the current tab (`#Battery`), so a tab can be bookmarked.
+This chart shows runtime in hours against battery size and ranks phones by
+runtime. The dashed line shows the runtime a phone of each battery size would
+reach at the power draw of the most efficient selected phone. Phones close to
+the line use their battery well.
 
-Flags:
+### Energy efficiency
 
-```powershell
-python socpk_web.py --csv cpu_gb6_curves.csv --csv gpu_snl_curves.csv
-python socpk_web.py --root . --dataset "SPEC INT"
-python socpk_web.py --port 0 --no-browser
-```
+![Energy efficiency](docs/images/battery-energy-efficiency.png)
 
-`--csv` (alias `--input`) loads only the named files and can repeat. `--root`
-sets the folder to scan. `--dataset` picks the tab shown at startup, and takes
-`CPU` (GB6), `CPU GB7`, `SPEC INT`, `SPEC FP`, `GPU`, `Laptop GPU`, or
-`Battery`. `--host` and `--port` set the bind address (`--port 0` picks a free
-port), `--browser` names a browser to open, and `--no-browser` leaves the
-browser closed. `socpk_gui.py` accepts `--root`, `--csv` and `--dataset` with
-the same meanings.
+This chart uses the same layout with runtime in minutes, and ranks phones by
+**minutes per Wh**. That ranking separates efficiency from battery size, so a
+small phone can rank above a large one.
 
-A loopback `--host` binds IPv4 and IPv6, because `localhost` resolves to `::1`
-before `127.0.0.1` on macOS and a single-family bind leaves the browser
-retrying a refused connection first. Any other `--host` binds only itself.
+### Average power draw
 
-### Safari and HTTPS-Only
+![Average power draw](docs/images/battery-average-power-draw.png)
 
-Safari's **HTTPS-Only** setting refuses plain HTTP everywhere, loopback
-included, so `http://localhost:8765/` fails with `WebKitErrorDomain:305`
-before it reaches the dashboard. Either serve over TLS:
+This chart shows average power draw against battery size and ranks phones from
+the lowest draw. The dashed line connects the ringed phones. For each of them,
+no other selected phone has a bigger battery and a lower power draw.
 
-```powershell
-python socpk_web.py --https
-```
+### Processor averages
 
-which generates a certificate for `localhost`, `127.0.0.1` and `::1` once into
-`.cache/socpk-web/` and reuses it for a year. Safari then reaches the
-dashboard and asks you to accept the self-signed certificate once; installing
-[mkcert](https://github.com/FiloSottile/mkcert) beforehand issues a
-system-trusted certificate instead and removes even that prompt.
+When the snapshot was collected with `--auto-soc`, the left panel gains a
+**Processors** tab. Each processor is the plain average of the phones that use
+it, so each phone counts once. Phones whose chip could not be identified with
+confidence are left out.
 
-Otherwise, open another browser:
+| SoC Average Power Draw | SoC Average Efficiency |
+| --- | --- |
+| ![](docs/images/battery-soc-average-power.png) | ![](docs/images/battery-soc-average-efficiency.png) |
+| Average W vs average battery Wh, ranked by lowest W | Average min/Wh vs average W, ranked by highest min/Wh |
 
-```powershell
-python socpk_web.py --browser chrome
-```
-
-or turn HTTPS-Only off in Safari's settings. The Tk fallback needs none of
-this.
-
-### Tk fallback on macOS
-
-`socpk_gui.py` detects Python installations that omit Tk (including the
-default Homebrew configuration). If `uv` is available, it automatically
-relaunches with a user-local Tk-enabled Python and the declared requirements;
-that fallback is explicitly offline and uses uv's local package cache, so
-starting the dashboard does not contact PyPI. No system Python changes are
-needed. Without `uv`, install it or install the Homebrew `python-tk` formula
-matching your Python version. The web dashboard needs none of this.
-
-## Other scripts
-
-`Performance Benchmark\curve_analysis.py --input <csv>` reads a CPU or GPU
-snapshot and plots per-model power, score, and efficiency statistics; `--save`
-writes the figures as PNGs instead of displaying them. It reads the current
-schemas and keeps each SPEC core separate.
-
-`Performance Benchmark\soc_curve_gui.py` is a launcher kept for older commands
-and starts the Tk fallback dashboard, the same as `socpk_gui.py`.
-
+On the device charts, **Overlay average lines** draws one labelled line for
+each selected processor.
 
 ## Analysis lab
 
-Click any table column heading to sort ascending; click again for descending.
-Sorting updates automatically when targets, filters or selections change, and
-is remembered separately for each table and dataset. Missing results stay last;
-ranges sort by their lower bound, then upper bound. **Clear sort** restores the
-default order for all analysis tables in the current dataset. CSV exports follow
-the displayed order.
+The **Analysis lab** panel below the chart works on the selected profiles.
 
-The expandable **Analysis lab** below the web chart uses the selected device
-profiles. Settings are retained independently per benchmark. Its filters apply
-only to the analysis panel; processor distributions also respect the Processors
-selection. Use **Export analysis CSV** to retain the displayed tables, settings,
-source filenames and snapshot load time. Chart PNG/SVG export remains separate.
+- **CPU and GPU tabs:**
+  - score at a chosen wattage, and the power needed to reach a target score
+  - power needed for 80–100% of peak performance
+  - the Pareto frontier
+  - a baseline comparison between chip generations
+- **Battery tab:**
+  - phone power grouped by processor, with brand and screen filters
+  - a runtime comparison split into a battery-size effect and a power effect
 
-For CPU/GPU datasets:
+Values between published points are interpolated linearly, and nothing is
+extrapolated beyond them. Click a column heading to sort the table, and use
+**Export analysis CSV** to save the tables.
 
-- **Equal power / performance** compares score at a chosen wattage and minimum
-  power at a target score, with percentage differences against a baseline.
-- **Power trade-offs** reports power for 80%, 90%, 95% and 100% of each profile's
-  published peak, including the extra watts needed for the final 10%.
-- **Published-point frontier** retains points with no other selected point offering
-  at least the same score at no greater power, with one strict improvement.
-- **Baseline / generation comparison** plots relative performance over shared
-  power ranges and identifies equal-score crossings. Select an older generation
-  as baseline to compare its successor within the same benchmark.
+`battery_metadata.json` holds reviewed corrections to phone metadata, such as
+chipset, screen size and refresh rate. They are applied when data is loaded
+and never change runtime or capacity.
 
-Interpolation is piecewise linear between adjacent published power points.
-Every target estimate includes its bracket and power gap. No extrapolation is
-performed. Published points may themselves be fitted upstream; sparse gaps do
-not imply measured intermediate performance. Conflicting duplicate powers and
-multiple source series are not silently blended. Inverting a nonmonotonic curve
-returns the lowest bracketed power reaching the requested score. These analyses
-do not measure sustained performance or thermal throttling.
+## Dashboard options
 
-For batteries, **Phone power grouped by processor** shows mean, median, observed
-range, device-profile/brand counts, individual devices and leave-one-brand-out
-sensitivity. Brand and screen-size/refresh filters permit narrower cohorts;
-missing metadata is excluded when that filter is active. Repeated OS profiles
-are not independent devices and observed spread is not a confidence interval.
+```powershell
+python socpk_web.py --dataset Battery              # open on a given tab
+python socpk_web.py --csv snapshots\gpu_snl_curves.csv
+python socpk_web.py --port 0 --no-browser          # any free port, no browser
+python socpk_web.py --https                        # for Safari with HTTPS-Only
+python socpk_web.py --browser chrome
+```
 
-**Runtime / generation comparison** decomposes the runtime ratio into capacity
-ratio times inverse power ratio. Choose comparable product families and sizes
-manually; software and other hardware differences remain. The common-battery
-scenario defaults to 20 Wh and holds estimated consumption constant. For a
-profile aggregating several rows, decomposition uses mean capacity divided by
-mean runtime so the ratio identity remains exact. Battery-imprint Wh is always
-the energy basis; measured-mAh overlays do not enter these calculations.
+- **Safari:** with HTTPS-Only turned on, Safari refuses plain `http://localhost`.
+  Use `--https`, which creates a self-signed local certificate, or open the
+  dashboard in another browser.
+- **Tk fallback:** `socpk_gui.py` is a slower desktop fallback with the same
+  datasets and charts, for machines without a usable browser. It does not
+  include the Analysis lab.
+- **Keyboard:** `[` and `]` switch tabs, and `/` focuses the search box.
 
-`battery_metadata.json` records the reviewed September 2026 metadata corrections
-and their provenance. The collector and web payload apply the shared overlay in
-`battery_metadata.py`, leaving historical CSVs, battery energy and runtimes intact.
-Known ambiguous processor assignments remain unassigned rather than falling
-back to the original chipset string. The web device table exposes review sources.
-The Tk fallback does not acquire the new analysis panel or overlay when loading
-old snapshots; newly collected snapshots already contain reviewed metadata.
+## Other scripts
 
-The standalone `curve_analysis.py --input <csv> --save` now writes
-`curve_summary.csv` with power bounds and means integrated over the shared power
-interval. It integrates score/W analytically from piecewise-linear score curves,
-so inserting collinear points cannot change the result. Disjoint ranges,
-conflicting duplicate powers, nonpositive values and singleton curves fail with
-an explanation rather than yielding a misleading average.
-
+- `Performance Benchmark\curve_analysis.py --input <csv> --save` plots per-chip
+  power, score and efficiency statistics and writes `curve_summary.csv`.
+- `analysis/battery_blog_audit.py` reproduces the numbers in the battery
+  write-up offline.
 
 ## Checking changes
 
@@ -394,7 +210,5 @@ an explanation rather than yielding a misleading average.
 python tests/smoke.py
 ```
 
-Compiles every Python and JavaScript source, starts the dashboard in-process
-against the local snapshots, and checks the page assets, `/api/data`, and
-`/api/reload`. It prints `SMOKE OK` or the failures and writes nothing to disk.
-It does not click through the UI; check behaviour changes in the browser.
+This compiles every source file, starts the dashboard in-process and checks
+that its pages and API respond. It prints `SMOKE OK` on success.
