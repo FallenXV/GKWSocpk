@@ -1,0 +1,2422 @@
+{
+  "source": "snapshots/battery_results_20260919T075628417409Z_1.csv",
+  "source_sha256": "9b234136a80b4023827aaa5f571434b56938f5b256c12ca4ffa8f592de8bcac4",
+  "capacity_basis": "Battery-imprint Wh, confirmed by the author; retained unchanged",
+  "scope": "All 80 rows checked for arithmetic, raw aggregates, cache identity and imported fields. Selected incorrect specifications checked against cited sources. No repeat battery testing or independent verification of all original manufacturer specifications.",
+  "devices": 80,
+  "assigned_devices": 78,
+  "processor_groups": 21,
+  "singleton_groups": 9,
+  "median_group_size": 2.0,
+  "raw_processor_groups": 25,
+  "records_with_changes": 13,
+  "ranking": [
+    {
+      "soc": "Apple A20 Pro",
+      "n": 2,
+      "power": 2.0039992986,
+      "minimum": 1.983956044,
+      "maximum": 2.0240425532,
+      "sd": 0.0283454425
+    },
+    {
+      "soc": "Apple A19 Pro",
+      "n": 3,
+      "power": 2.1505497738,
+      "minimum": 2.106741573,
+      "maximum": 2.2223564955,
+      "sd": 0.0626868443
+    },
+    {
+      "soc": "Apple A19",
+      "n": 1,
+      "power": 2.2363636364,
+      "minimum": 2.2363636364,
+      "maximum": 2.2363636364,
+      "sd": null
+    },
+    {
+      "soc": "Kirin 9030S",
+      "n": 2,
+      "power": 2.378736413,
+      "minimum": 2.328125,
+      "maximum": 2.4293478261,
+      "sd": 0.0715753467
+    },
+    {
+      "soc": "Apple A18",
+      "n": 1,
+      "power": 2.4280701754,
+      "minimum": 2.4280701754,
+      "maximum": 2.4280701754,
+      "sd": null
+    },
+    {
+      "soc": "Kirin 9020",
+      "n": 2,
+      "power": 2.5422883065,
+      "minimum": 2.503125,
+      "maximum": 2.5814516129,
+      "sd": 0.0553852791
+    },
+    {
+      "soc": "Apple A18 Pro",
+      "n": 2,
+      "power": 2.5445083381,
+      "minimum": 2.5117117117,
+      "maximum": 2.5773049645,
+      "sd": 0.0463814339
+    },
+    {
+      "soc": "Apple A17 Pro",
+      "n": 2,
+      "power": 2.5662121212,
+      "minimum": 2.54,
+      "maximum": 2.5924242424,
+      "sd": 0.0370695373
+    },
+    {
+      "soc": "Kirin 9010S",
+      "n": 4,
+      "power": 2.6127261021,
+      "minimum": 2.5573943662,
+      "maximum": 2.6800738007,
+      "sd": 0.0510604754
+    },
+    {
+      "soc": "Kirin 9030 Pro",
+      "n": 1,
+      "power": 2.7097165992,
+      "minimum": 2.7097165992,
+      "maximum": 2.7097165992,
+      "sd": null
+    },
+    {
+      "soc": "Snapdragon 8 Gen 5",
+      "n": 2,
+      "power": 2.7163449848,
+      "minimum": 2.5376899696,
+      "maximum": 2.895,
+      "sd": 0.2526563455
+    },
+    {
+      "soc": "Dimensity 9500",
+      "n": 9,
+      "power": 2.846062142,
+      "minimum": 2.6808,
+      "maximum": 3.1133004926,
+      "sd": 0.13239657
+    },
+    {
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "n": 19,
+      "power": 2.8670956316,
+      "minimum": 2.6009615385,
+      "maximum": 3.1518828452,
+      "sd": 0.1861153128
+    },
+    {
+      "soc": "Dimensity 9400+",
+      "n": 3,
+      "power": 2.8735614111,
+      "minimum": 2.7141552511,
+      "maximum": 2.9976284585,
+      "sd": 0.1450031188
+    },
+    {
+      "soc": "Snapdragon 8 Elite",
+      "n": 19,
+      "power": 2.8910576485,
+      "minimum": 2.5033898305,
+      "maximum": 3.0943820225,
+      "sd": 0.149991027
+    },
+    {
+      "soc": "Dimensity 9500s",
+      "n": 1,
+      "power": 2.9326530612,
+      "minimum": 2.9326530612,
+      "maximum": 2.9326530612,
+      "sd": null
+    },
+    {
+      "soc": "Dimensity 8500 Ultra",
+      "n": 1,
+      "power": 2.973512476,
+      "minimum": 2.973512476,
+      "maximum": 2.973512476,
+      "sd": null
+    },
+    {
+      "soc": "Dimensity 9500 Monster",
+      "n": 1,
+      "power": 2.9796954315,
+      "minimum": 2.9796954315,
+      "maximum": 2.9796954315,
+      "sd": null
+    },
+    {
+      "soc": "Xring O1",
+      "n": 1,
+      "power": 3.0330396476,
+      "minimum": 3.0330396476,
+      "maximum": 3.0330396476,
+      "sd": null
+    },
+    {
+      "soc": "Kirin 9000S",
+      "n": 1,
+      "power": 3.2275280899,
+      "minimum": 3.2275280899,
+      "maximum": 3.2275280899,
+      "sd": null
+    },
+    {
+      "soc": "Google Tensor G5",
+      "n": 1,
+      "power": 3.3777777778,
+      "minimum": 3.3777777778,
+      "maximum": 3.3777777778,
+      "sd": null
+    }
+  ],
+  "refresh_120": [
+    {
+      "soc": "Apple A17 Pro",
+      "n": 2,
+      "power": 2.5662121212
+    },
+    {
+      "soc": "Apple A18 Pro",
+      "n": 2,
+      "power": 2.5445083381
+    },
+    {
+      "soc": "Apple A19",
+      "n": 1,
+      "power": 2.2363636364
+    },
+    {
+      "soc": "Apple A19 Pro",
+      "n": 3,
+      "power": 2.1505497738
+    },
+    {
+      "soc": "Apple A20 Pro",
+      "n": 2,
+      "power": 2.0039992986
+    },
+    {
+      "soc": "Dimensity 8500 Ultra",
+      "n": 1,
+      "power": 2.973512476
+    },
+    {
+      "soc": "Dimensity 9500",
+      "n": 4,
+      "power": 2.8229856653
+    },
+    {
+      "soc": "Dimensity 9500s",
+      "n": 1,
+      "power": 2.9326530612
+    },
+    {
+      "soc": "Google Tensor G5",
+      "n": 1,
+      "power": 3.3777777778
+    },
+    {
+      "soc": "Kirin 9000S",
+      "n": 1,
+      "power": 3.2275280899
+    },
+    {
+      "soc": "Kirin 9010S",
+      "n": 4,
+      "power": 2.6127261021
+    },
+    {
+      "soc": "Kirin 9020",
+      "n": 2,
+      "power": 2.5422883065
+    },
+    {
+      "soc": "Kirin 9030 Pro",
+      "n": 1,
+      "power": 2.7097165992
+    },
+    {
+      "soc": "Kirin 9030S",
+      "n": 2,
+      "power": 2.378736413
+    },
+    {
+      "soc": "Snapdragon 8 Elite",
+      "n": 11,
+      "power": 2.9090944906
+    },
+    {
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "n": 9,
+      "power": 2.8787542679
+    },
+    {
+      "soc": "Xring O1",
+      "n": 1,
+      "power": 3.0330396476
+    }
+  ],
+  "comparisons": [
+    {
+      "reference": "Kirin 9030S",
+      "reference_w": 2.3787364130434785,
+      "a20_lower_pct": 15.75362080535243,
+      "a19_lower_pct": 9.592766899649984
+    },
+    {
+      "reference": "Snapdragon 8 Elite Gen 5",
+      "reference_w": 2.8670956315839944,
+      "a20_lower_pct": 30.103506960226145,
+      "a19_lower_pct": 24.992045954358332
+    },
+    {
+      "reference": "Snapdragon 8 Elite",
+      "reference_w": 2.8910576484981405,
+      "a20_lower_pct": 30.68283160611435,
+      "a19_lower_pct": 25.61373603531222
+    },
+    {
+      "reference": "Dimensity 9500",
+      "reference_w": 2.846062142034792,
+      "a20_lower_pct": 29.586945099483742,
+      "a19_lower_pct": 24.437708438594143
+    },
+    {
+      "reference": "Google Tensor G5",
+      "reference_w": 3.377777777777778,
+      "a20_lower_pct": 40.67107339748717,
+      "a19_lower_pct": 36.33240801299967
+    }
+  ],
+  "leave_one_brand_out": {
+    "Snapdragon 8 Elite Gen 5": [
+      {
+        "brand": "Xiaomi",
+        "omitted": 5,
+        "mean_after": 2.823314550676706,
+        "change_w": -0.043781080907288494
+      },
+      {
+        "brand": "Samsung",
+        "omitted": 1,
+        "mean_after": 2.8812446226106916,
+        "change_w": 0.0141489910266972
+      },
+      {
+        "brand": "RedMagic",
+        "omitted": 1,
+        "mean_after": 2.8812000633925035,
+        "change_w": 0.014104431808509066
+      },
+      {
+        "brand": "iQOO",
+        "omitted": 2,
+        "mean_after": 2.880886245103828,
+        "change_w": 0.013790613519833794
+      },
+      {
+        "brand": "Realme",
+        "omitted": 1,
+        "mean_after": 2.8533660301767814,
+        "change_w": -0.013729601407213021
+      },
+      {
+        "brand": "OnePlus",
+        "omitted": 2,
+        "mean_after": 2.878577175492558,
+        "change_w": 0.011481543908563818
+      },
+      {
+        "brand": "OPPO",
+        "omitted": 1,
+        "mean_after": 2.859777032818843,
+        "change_w": -0.007318598765151396
+      },
+      {
+        "brand": "Nubia",
+        "omitted": 1,
+        "mean_after": 2.8725724938538475,
+        "change_w": 0.005476862269853111
+      },
+      {
+        "brand": "vivo",
+        "omitted": 1,
+        "mean_after": 2.8636576337921755,
+        "change_w": -0.0034379977918188587
+      },
+      {
+        "brand": "Honor",
+        "omitted": 3,
+        "mean_after": 2.8705212972369667,
+        "change_w": 0.0034256656529723095
+      },
+      {
+        "brand": "Redmi",
+        "omitted": 1,
+        "mean_after": 2.8649903114415487,
+        "change_w": -0.002105320142445688
+      }
+    ],
+    "Snapdragon 8 Elite": [
+      {
+        "brand": "Samsung",
+        "omitted": 2,
+        "mean_after": 2.920145237514954,
+        "change_w": 0.029087589016814075
+      },
+      {
+        "brand": "iQOO",
+        "omitted": 3,
+        "mean_after": 2.910327319243298,
+        "change_w": 0.019269670745158063
+      },
+      {
+        "brand": "Xiaomi",
+        "omitted": 2,
+        "mean_after": 2.8797143869772714,
+        "change_w": -0.01134326152086862
+      },
+      {
+        "brand": "vivo",
+        "omitted": 1,
+        "mean_after": 2.8800129761284774,
+        "change_w": -0.011044672369662667
+      },
+      {
+        "brand": "OnePlus",
+        "omitted": 3,
+        "mean_after": 2.880810451619995,
+        "change_w": -0.010247196878145015
+      },
+      {
+        "brand": "Honor",
+        "omitted": 3,
+        "mean_after": 2.8817628765386445,
+        "change_w": -0.009294771959495574
+      },
+      {
+        "brand": "Realme",
+        "omitted": 1,
+        "mean_after": 2.8875788250486907,
+        "change_w": -0.0034788234494493864
+      },
+      {
+        "brand": "Redmi",
+        "omitted": 3,
+        "mean_after": 2.8898246402559593,
+        "change_w": -0.0012330082421807553
+      },
+      {
+        "brand": "OPPO",
+        "omitted": 1,
+        "mean_after": 2.8901606628685643,
+        "change_w": -0.0008969856295757417
+      }
+    ],
+    "Dimensity 9500": [
+      {
+        "brand": "OnePlus",
+        "omitted": 1,
+        "mean_after": 2.8126573482127863,
+        "change_w": -0.03340479382200545
+      },
+      {
+        "brand": "OPPO",
+        "omitted": 3,
+        "mean_after": 2.8602699266983187,
+        "change_w": 0.014207784663526901
+      },
+      {
+        "brand": "vivo",
+        "omitted": 3,
+        "mean_after": 2.856073990979727,
+        "change_w": 0.010011848944935231
+      },
+      {
+        "brand": "Xiaomi",
+        "omitted": 1,
+        "mean_after": 2.8547768990364526,
+        "change_w": 0.0087147570016608
+      },
+      {
+        "brand": "Redmi",
+        "omitted": 1,
+        "mean_after": 2.8525874536487903,
+        "change_w": 0.006525311613998497
+      }
+    ]
+  },
+  "correlations": {
+    "capacityWh": 0.5162136670647082,
+    "screen_size_in": 0.3235609210580766,
+    "mp": 0.2378114041570412,
+    "refresh_hz": 0.30059647513664517,
+    "avgPowerW": 1.0
+  },
+  "display_means": [
+    {
+      "apple": false,
+      "refresh_hz": 133.4057971014,
+      "mp": 3.7577157101
+    },
+    {
+      "apple": true,
+      "refresh_hz": 114.5454545455,
+      "mp": 3.3715505455
+    }
+  ],
+  "recent_apple_max_w": 2.2363636363636363,
+  "non_apple_min_w": 2.328125,
+  "separation_w": 0.09176136363636367,
+  "generations": [
+    {
+      "model": "Pro",
+      "from": 15,
+      "to": 16,
+      "old_w": 2.54,
+      "new_w": 2.511711711711712,
+      "lower_pct": 1.1137121373341774
+    },
+    {
+      "model": "Pro",
+      "from": 16,
+      "to": 17,
+      "old_w": 2.511711711711712,
+      "new_w": 2.1225512528473804,
+      "lower_pct": 15.493834624799419
+    },
+    {
+      "model": "Pro",
+      "from": 17,
+      "to": 18,
+      "old_w": 2.1225512528473804,
+      "new_w": 2.0240425531914896,
+      "lower_pct": 4.641051636503124
+    },
+    {
+      "model": "Pro Max",
+      "from": 15,
+      "to": 16,
+      "old_w": 2.5924242424242423,
+      "new_w": 2.577304964539007,
+      "lower_pct": 0.5832100177822985
+    },
+    {
+      "model": "Pro Max",
+      "from": 16,
+      "to": 17,
+      "old_w": 2.577304964539007,
+      "new_w": 2.106741573033708,
+      "lower_pct": 18.257963181686065
+    },
+    {
+      "model": "Pro Max",
+      "from": 17,
+      "to": 18,
+      "old_w": 2.106741573033708,
+      "new_w": 1.983956043956044,
+      "lower_pct": 5.82821978021979
+    }
+  ],
+  "pro_only_a19_w": 2.1146464129405445,
+  "raw_device_audit": [
+    {
+      "csv_line": 2,
+      "brand": "Honor",
+      "model": "WIN RT",
+      "cached_title": "Honor Win RT",
+      "cache": ".gsm_cache/phone__win_rt.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__win_rt.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 3,
+      "brand": "Honor",
+      "model": "WIN",
+      "cached_title": "Honor Win",
+      "cache": ".gsm_cache/phone__win.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__win.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 4,
+      "brand": "Redmi",
+      "model": "K90 至尊版",
+      "cached_title": "Xiaomi Redmi K90 Ultra",
+      "cache": ".gsm_cache/phone__k90.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__k90.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 5,
+      "brand": "Redmi",
+      "model": "Turbo 5 Max",
+      "cached_title": "Xiaomi Redmi Turbo 5 Max",
+      "cache": ".gsm_cache/phone__turbo_5_max.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__turbo_5_max.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 6,
+      "brand": "Redmi",
+      "model": "K90 Max",
+      "cached_title": "Xiaomi Redmi K90 Max",
+      "cache": ".gsm_cache/phone__k90_max.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__k90_max.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 7,
+      "brand": "RedMagic",
+      "model": "11 Pro",
+      "cached_title": "ZTE nubia RedMagic 11 Pro",
+      "cache": ".gsm_cache/phone__11_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__11_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 8,
+      "brand": "Xiaomi",
+      "model": "17 Max",
+      "cached_title": "Xiaomi 17 Max",
+      "cache": ".gsm_cache/phone__17_max.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__17_max.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 9,
+      "brand": "iQOO",
+      "model": "Z11 Turbo",
+      "cached_title": "vivo iQOO Z11 Turbo",
+      "cache": ".gsm_cache/phone_iqoo_z11_turbo.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_iqoo_z11_turbo.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 10,
+      "brand": "iQOO",
+      "model": "Z10 Turbo+",
+      "cached_title": "vivo iQOO Z10 Turbo+",
+      "cache": ".gsm_cache/phone_iqoo_z10_turbo.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_iqoo_z10_turbo.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 11,
+      "brand": "OnePlus",
+      "model": "Ace6T",
+      "cached_title": "OnePlus Ace 6T",
+      "cache": ".gsm_cache/phone__ace6t.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__ace6t.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 12,
+      "brand": "OnePlus",
+      "model": "15T",
+      "cached_title": "OnePlus 15T",
+      "cache": ".gsm_cache/phone__15t.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__15t.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 13,
+      "brand": "OnePlus",
+      "model": "Ace6 至尊版",
+      "cached_title": "OnePlus Ace 6 Ultra",
+      "cache": ".gsm_cache/phone__ace6.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__ace6.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 14,
+      "brand": "iQOO",
+      "model": "Neo 11",
+      "cached_title": "vivo iQOO Neo11 (China)",
+      "cache": ".gsm_cache/phone_iqoo_neo_11.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_iqoo_neo_11.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 15,
+      "brand": "Honor",
+      "model": "Magic8 Pro",
+      "cached_title": "Honor Magic8 Pro",
+      "cache": ".gsm_cache/phone__magic8_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__magic8_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 16,
+      "brand": "OPPO",
+      "model": "Find X9 Pro",
+      "cached_title": "Oppo Find X9s Pro",
+      "cache": ".gsm_cache/phone_oppo_find_x9_pro.html",
+      "note": "Wrong Find X9s Pro match",
+      "evidence": "https://www.oppo.com/cn/smartphones/series-find-x/find-x9-pro/specs/",
+      "changes": {
+        "screen_size_in": {
+          "before": 6.32,
+          "after": 6.78
+        },
+        "resolution_px_w": {
+          "before": 1216,
+          "after": 1272
+        },
+        "resolution_px_h": {
+          "before": 2640,
+          "after": 2772
+        },
+        "refresh_hz": {
+          "before": 144.0,
+          "after": 120
+        }
+      }
+    },
+    {
+      "csv_line": 17,
+      "brand": "Huawei",
+      "model": "Nova 16",
+      "cached_title": "Huawei nova 16",
+      "cache": ".gsm_cache/phone__nova_16.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__nova_16.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 18,
+      "brand": "Huawei",
+      "model": "Nova 16 Pro",
+      "cached_title": "Huawei nova 16 Pro",
+      "cache": ".gsm_cache/phone__nova_16_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__nova_16_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 19,
+      "brand": "iQOO",
+      "model": "15 Ultra",
+      "cached_title": "vivo iQOO 15 Ultra",
+      "cache": ".gsm_cache/phone_iqoo_15_ultra.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_iqoo_15_ultra.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 20,
+      "brand": "iQOO",
+      "model": "15T",
+      "cached_title": "vivo iQOO 15T",
+      "cache": ".gsm_cache/phone_iqoo_15t.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_iqoo_15t.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 21,
+      "brand": "Redmi",
+      "model": "K90 Pro Max",
+      "cached_title": "Xiaomi Redmi K90 Pro Max",
+      "cache": ".gsm_cache/phone__k90_pro_max.html",
+      "note": "PWM frequency parsed as refresh rate",
+      "evidence": ".gsm_cache/phone__k90_pro_max.html",
+      "changes": {
+        "refresh_hz": {
+          "before": 560.0,
+          "after": 120
+        }
+      }
+    },
+    {
+      "csv_line": 22,
+      "brand": "OnePlus",
+      "model": "Ace6",
+      "cached_title": "OnePlus Ace 6 Ultra",
+      "cache": ".gsm_cache/phone__ace6.html",
+      "note": "Ace 6 Ultra cache collision",
+      "evidence": "https://www.oneplus.com/cn/ace-6",
+      "changes": {
+        "soc": {
+          "before": "Dimensity 9500",
+          "after": "Snapdragon 8 Elite"
+        },
+        "screen_size_in": {
+          "before": 6.78,
+          "after": 6.83
+        },
+        "resolution_px_h": {
+          "before": 2772,
+          "after": 2800
+        }
+      }
+    },
+    {
+      "csv_line": 23,
+      "brand": "Nubia",
+      "model": "Z80 Ultra",
+      "cached_title": "ZTE nubia Z80 Ultra",
+      "cache": ".gsm_cache/phone__z80_ultra.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__z80_ultra.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 24,
+      "brand": "Huawei",
+      "model": "Pura 90 Pro",
+      "cached_title": "Huawei Pura 90 Pro",
+      "cache": ".gsm_cache/phone__pura_90_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__pura_90_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 25,
+      "brand": "Redmi",
+      "model": "K80 至尊版",
+      "cached_title": "Xiaomi Redmi K80 Ultra",
+      "cache": ".gsm_cache/phone__k80.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__k80.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 26,
+      "brand": "Honor",
+      "model": "GT Pro",
+      "cached_title": "Honor GT Pro",
+      "cache": ".gsm_cache/phone__gt_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__gt_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 27,
+      "brand": "Huawei",
+      "model": "Nova 15 Pro",
+      "cached_title": "Huawei nova 15 Pro",
+      "cache": ".gsm_cache/phone__nova_15_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__nova_15_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 28,
+      "brand": "Xiaomi",
+      "model": "17T Pro",
+      "cached_title": "Xiaomi 17T Pro",
+      "cache": ".gsm_cache/phone__17t_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__17t_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 29,
+      "brand": "iQOO",
+      "model": "15",
+      "cached_title": "vivo iQOO 15",
+      "cache": ".gsm_cache/phone_iqoo_15.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_iqoo_15.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 30,
+      "brand": "OPPO",
+      "model": "Find X9s Pro",
+      "cached_title": "Oppo Find X9s Pro",
+      "cache": ".gsm_cache/phone_oppo_find_x9s_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_oppo_find_x9s_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 31,
+      "brand": "iQOO",
+      "model": "Neo 10 Pro+",
+      "cached_title": "vivo iQOO Neo10 Pro+ (China)",
+      "cache": ".gsm_cache/phone_iqoo_neo_10_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_iqoo_neo_10_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 32,
+      "brand": "OnePlus",
+      "model": "15",
+      "cached_title": "OnePlus 15",
+      "cache": ".gsm_cache/phone__15.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__15.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 33,
+      "brand": "Huawei",
+      "model": "Pura 90 Pro Max",
+      "cached_title": "Huawei Pura 90 Pro Max",
+      "cache": ".gsm_cache/phone__pura_90_pro_max.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__pura_90_pro_max.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 34,
+      "brand": "Honor",
+      "model": "Magic8",
+      "cached_title": "Honor Magic8",
+      "cache": ".gsm_cache/phone__magic8.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__magic8.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 35,
+      "brand": "Realme",
+      "model": "GT8",
+      "cached_title": "Realme GT8 (China)",
+      "cache": ".gsm_cache/phone_realme_gt8.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_realme_gt8.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 36,
+      "brand": "Huawei",
+      "model": "Pura 90",
+      "cached_title": "Huawei Pura 90",
+      "cache": ".gsm_cache/phone__pura_90.html",
+      "note": "Normalise 9010s/9010S case",
+      "evidence": ".gsm_cache/phone__pura_90.html",
+      "changes": {
+        "soc": {
+          "before": "Kirin 9010s",
+          "after": "Kirin 9010S"
+        }
+      }
+    },
+    {
+      "csv_line": 37,
+      "brand": "vivo",
+      "model": "X300s",
+      "cached_title": "vivo X300s",
+      "cache": ".gsm_cache/phone_vivo_x300s.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_vivo_x300s.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 38,
+      "brand": "Xiaomi",
+      "model": "17 Pro Max",
+      "cached_title": "Xiaomi 17 Pro Max",
+      "cache": ".gsm_cache/phone__17_pro_max.html",
+      "note": "PWM frequency parsed as refresh rate",
+      "evidence": ".gsm_cache/phone__17_pro_max.html",
+      "changes": {
+        "refresh_hz": {
+          "before": 160.0,
+          "after": 120
+        }
+      }
+    },
+    {
+      "csv_line": 39,
+      "brand": "Apple",
+      "model": "iPhone 17 Pro Max",
+      "cached_title": "Apple iPhone 17 Pro Max",
+      "cache": ".gsm_cache/phone__iphone_17_pro_max.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_17_pro_max.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 40,
+      "brand": "Xiaomi",
+      "model": "17",
+      "cached_title": "Xiaomi Redmi 17",
+      "cache": ".gsm_cache/phone__17.html",
+      "note": "Wrong Redmi 17 match",
+      "evidence": "https://www.mi.com/sg/product/xiaomi-17/specs/",
+      "changes": {
+        "soc": {
+          "before": "Snapdragon 4 Gen 5",
+          "after": "Snapdragon 8 Elite Gen 5"
+        },
+        "screen_size_in": {
+          "before": 6.9,
+          "after": 6.3
+        },
+        "resolution_px_w": {
+          "before": 720,
+          "after": 1220
+        },
+        "resolution_px_h": {
+          "before": 1600,
+          "after": 2656
+        }
+      }
+    },
+    {
+      "csv_line": 41,
+      "brand": "OPPO",
+      "model": "Find X9",
+      "cached_title": "Oppo Find X9s",
+      "cache": ".gsm_cache/phone_oppo_find_x9.html",
+      "note": "Wrong Find X9s match",
+      "evidence": "https://www.oppo.com/cn/smartphones/series-find-x/find-x9/specs/",
+      "changes": {
+        "soc": {
+          "before": "Dimensity 9500s",
+          "after": "Dimensity 9500"
+        }
+      }
+    },
+    {
+      "csv_line": 42,
+      "brand": "Xiaomi",
+      "model": "17T",
+      "cached_title": "Xiaomi 17T",
+      "cache": ".gsm_cache/phone__17t.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__17t.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 43,
+      "brand": "Redmi",
+      "model": "K90",
+      "cached_title": "Xiaomi Redmi K90 Ultra",
+      "cache": ".gsm_cache/phone__k90.html",
+      "note": "K90 Ultra cache collision",
+      "evidence": "https://www.antutu.com/doc/136907.htm",
+      "changes": {
+        "screen_size_in": {
+          "before": 6.83,
+          "after": 6.59
+        },
+        "resolution_px_w": {
+          "before": 1280,
+          "after": 1156
+        },
+        "resolution_px_h": {
+          "before": 2772,
+          "after": 2510
+        },
+        "refresh_hz": {
+          "before": 165.0,
+          "after": 120
+        }
+      }
+    },
+    {
+      "csv_line": 44,
+      "brand": "OPPO",
+      "model": "Find X9 Ultra",
+      "cached_title": "Oppo Find X9 Ultra",
+      "cache": ".gsm_cache/phone_oppo_find_x9_ultra.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_oppo_find_x9_ultra.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 45,
+      "brand": "Huawei",
+      "model": "Mate 80",
+      "cached_title": "Huawei Mate 80",
+      "cache": ".gsm_cache/phone__mate_80.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__mate_80.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 46,
+      "brand": "OnePlus",
+      "model": "Ace5 至尊版",
+      "cached_title": "OnePlus Ace 5 Ultra",
+      "cache": ".gsm_cache/phone__ace5.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__ace5.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 47,
+      "brand": "vivo",
+      "model": "X300 Pro",
+      "cached_title": "vivo X300 Pro",
+      "cache": ".gsm_cache/phone_vivo_x300_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_vivo_x300_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 48,
+      "brand": "vivo",
+      "model": "X300",
+      "cached_title": "vivo X300",
+      "cache": ".gsm_cache/phone_vivo_x300.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_vivo_x300.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 49,
+      "brand": "Realme",
+      "model": "GT8 Pro",
+      "cached_title": "Realme GT 8 Pro",
+      "cache": ".gsm_cache/phone_realme_gt8_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_realme_gt8_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 50,
+      "brand": "Huawei",
+      "model": "Mate 70 Pro+",
+      "cached_title": "Huawei Mate 70 Pro+",
+      "cache": ".gsm_cache/phone__mate_70_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__mate_70_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 51,
+      "brand": "Huawei",
+      "model": "Mate 80 Pro",
+      "cached_title": "Huawei Mate 80 Pro",
+      "cache": ".gsm_cache/phone__mate_80_pro.html",
+      "note": "Tested Kirin 9030/9030 Pro variant unidentified",
+      "evidence": ".gsm_cache/phone__mate_80_pro.html",
+      "changes": {
+        "soc": {
+          "before": "Kirin 9030 Pro (6 nm) (512GB / 1TB 16GB RAM) Kirin 9030 (6 nm) (256GB / 512GB 12GB RAM)",
+          "after": null
+        }
+      }
+    },
+    {
+      "csv_line": 52,
+      "brand": "Huawei",
+      "model": "Mate 80 Pro Max",
+      "cached_title": "Huawei Mate 80 Pro Max",
+      "cache": ".gsm_cache/phone__mate_80_pro_max.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__mate_80_pro_max.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 53,
+      "brand": "vivo",
+      "model": "X300 Ultra",
+      "cached_title": "vivo X300 Ultra",
+      "cache": ".gsm_cache/phone_vivo_x300_ultra.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_vivo_x300_ultra.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 54,
+      "brand": "Xiaomi",
+      "model": "17 Ultra",
+      "cached_title": "Xiaomi 17 Ultra",
+      "cache": ".gsm_cache/phone__17_ultra.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__17_ultra.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 55,
+      "brand": "iQOO",
+      "model": "13",
+      "cached_title": "vivo iQOO 13",
+      "cache": ".gsm_cache/phone_iqoo_13.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_iqoo_13.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 56,
+      "brand": "OPPO",
+      "model": "Find X8 Ultra",
+      "cached_title": "Oppo Find X8 Ultra",
+      "cache": ".gsm_cache/phone_oppo_find_x8_ultra.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_oppo_find_x8_ultra.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 57,
+      "brand": "Redmi",
+      "model": "K80 Pro",
+      "cached_title": "Xiaomi Redmi K80 Pro",
+      "cache": ".gsm_cache/phone__k80_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__k80_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 58,
+      "brand": "OnePlus",
+      "model": "Ace5 Pro",
+      "cached_title": "OnePlus Ace 5 Pro",
+      "cache": ".gsm_cache/phone__ace5_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__ace5_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 59,
+      "brand": "Xiaomi",
+      "model": "17 Pro",
+      "cached_title": "Xiaomi 17 Pro",
+      "cache": ".gsm_cache/phone__17_pro.html",
+      "note": "PWM frequency parsed as refresh rate",
+      "evidence": ".gsm_cache/phone__17_pro.html",
+      "changes": {
+        "refresh_hz": {
+          "before": 160.0,
+          "after": 120
+        }
+      }
+    },
+    {
+      "csv_line": 60,
+      "brand": "Honor",
+      "model": "Magic7 Pro",
+      "cached_title": "Honor Magic7 Pro",
+      "cache": ".gsm_cache/phone__magic7_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__magic7_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 61,
+      "brand": "OnePlus",
+      "model": "13",
+      "cached_title": "OnePlus 13",
+      "cache": ".gsm_cache/phone__13.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__13.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 62,
+      "brand": "Xiaomi",
+      "model": "15s Pro",
+      "cached_title": "Xiaomi 15S Pro",
+      "cache": ".gsm_cache/phone__15s_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__15s_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 63,
+      "brand": "Xiaomi",
+      "model": "15 Pro",
+      "cached_title": "Xiaomi 15 Pro",
+      "cache": ".gsm_cache/phone__15_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__15_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 64,
+      "brand": "Apple",
+      "model": "iPhone 17 Pro",
+      "cached_title": "Apple iPhone 17 Pro",
+      "cache": ".gsm_cache/phone__iphone_17_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_17_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 65,
+      "brand": "Samsung",
+      "model": "S26 Ultra",
+      "cached_title": "Samsung Galaxy S26 Ultra",
+      "cache": ".gsm_cache/phone__s26_ultra.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__s26_ultra.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 66,
+      "brand": "vivo",
+      "model": "X200 Ultra",
+      "cached_title": "vivo X200 Ultra",
+      "cache": ".gsm_cache/phone_vivo_x200_ultra.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone_vivo_x200_ultra.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 67,
+      "brand": "Apple",
+      "model": "iPhone 16 Pro Max",
+      "cached_title": "Apple iPhone 16 Pro Max",
+      "cache": ".gsm_cache/phone__iphone_16_pro_max.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_16_pro_max.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 68,
+      "brand": "Xiaomi",
+      "model": "15",
+      "cached_title": "OnePlus 15",
+      "cache": ".gsm_cache/phone__15.html",
+      "note": "OnePlus 15 cache collision and Redmi 15 URL",
+      "evidence": "https://www.mi.com/global/product/xiaomi-15/specs/",
+      "changes": {
+        "soc": {
+          "before": "Snapdragon 8 Elite Gen 5",
+          "after": "Snapdragon 8 Elite"
+        },
+        "screen_size_in": {
+          "before": 6.78,
+          "after": 6.36
+        },
+        "resolution_px_w": {
+          "before": 1272,
+          "after": 1200
+        },
+        "resolution_px_h": {
+          "before": 2772,
+          "after": 2670
+        },
+        "refresh_hz": {
+          "before": 165.0,
+          "after": 120
+        }
+      }
+    },
+    {
+      "csv_line": 69,
+      "brand": "Samsung",
+      "model": "S25 Ultra",
+      "cached_title": "Samsung Galaxy S25 Ultra",
+      "cache": ".gsm_cache/phone__s25_ultra.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__s25_ultra.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 70,
+      "brand": "Samsung",
+      "model": "S26",
+      "cached_title": "Samsung Galaxy S26",
+      "cache": ".gsm_cache/phone__s26.html",
+      "note": "Tested Snapdragon/Exynos variant unidentified",
+      "evidence": ".gsm_cache/phone__s26.html",
+      "changes": {
+        "soc": {
+          "before": "Snapdragon 8 Elite Gen 5 (3 nm) - US/CA/CN Exynos 2600 (2 nm) - ROW",
+          "after": null
+        }
+      }
+    },
+    {
+      "csv_line": 71,
+      "brand": "Apple",
+      "model": "iPhone 15 Pro Max",
+      "cached_title": "Apple iPhone 15 Pro Max",
+      "cache": ".gsm_cache/phone__iphone_15_pro_max.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_15_pro_max.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 72,
+      "brand": "Apple",
+      "model": "iPhone 17",
+      "cached_title": "Apple iPhone 17",
+      "cache": ".gsm_cache/phone__iphone_17.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_17.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 73,
+      "brand": "Huawei",
+      "model": "Mate 60 Pro",
+      "cached_title": "Huawei Mate 60 Pro",
+      "cache": ".gsm_cache/phone__mate_60_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__mate_60_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 74,
+      "brand": "Samsung",
+      "model": "S25 Edge",
+      "cached_title": "Samsung Galaxy S25 Edge",
+      "cache": ".gsm_cache/phone__s25_edge.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__s25_edge.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 75,
+      "brand": "Google",
+      "model": "Pixel 10 Pro XL",
+      "cached_title": "Google Pixel 10 Pro XL",
+      "cache": ".gsm_cache/phone__pixel_10_pro_xl.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__pixel_10_pro_xl.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 76,
+      "brand": "Apple",
+      "model": "iPhone 16",
+      "cached_title": "Apple iPhone 16",
+      "cache": ".gsm_cache/phone__iphone_16.html",
+      "note": "Missing refresh rate",
+      "evidence": "https://www.dxomark.com/apple-iphone-16-display-test/",
+      "changes": {
+        "refresh_hz": {
+          "before": null,
+          "after": 60
+        }
+      }
+    },
+    {
+      "csv_line": 77,
+      "brand": "Apple",
+      "model": "iPhone 16 Pro",
+      "cached_title": "Apple iPhone 16 Pro",
+      "cache": ".gsm_cache/phone__iphone_16_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_16_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 78,
+      "brand": "Apple",
+      "model": "iPhone Air",
+      "cached_title": "Apple iPhone Air",
+      "cache": ".gsm_cache/phone__iphone_air.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_air.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 79,
+      "brand": "Apple",
+      "model": "iPhone 15 Pro",
+      "cached_title": "Apple iPhone 15 Pro",
+      "cache": ".gsm_cache/phone__iphone_15_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_15_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 80,
+      "brand": "Apple",
+      "model": "iPhone 18 Pro",
+      "cached_title": "Apple iPhone 18 Pro",
+      "cache": ".gsm_cache/phone__iphone_18_pro.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_18_pro.html",
+      "changes": {}
+    },
+    {
+      "csv_line": 81,
+      "brand": "Apple",
+      "model": "iPhone 18 Pro Max",
+      "cached_title": "Apple iPhone 18 Pro Max",
+      "cache": ".gsm_cache/phone__iphone_18_pro_max.html",
+      "note": "Cache identity and imported fields checked; retained",
+      "evidence": ".gsm_cache/phone__iphone_18_pro_max.html",
+      "changes": {}
+    }
+  ],
+  "reviewed_devices": [
+    {
+      "brand": "荣耀",
+      "model": "WIN RT",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 726.0,
+      "capacityWh": 36.88,
+      "avgPowerW": 3.0479338843,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2800,
+      "refresh_hz": 185.0
+    },
+    {
+      "brand": "荣耀",
+      "model": "WIN",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 713.0,
+      "capacityWh": 36.88,
+      "avgPowerW": 3.1035063114,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2800,
+      "refresh_hz": 185.0
+    },
+    {
+      "brand": "红米",
+      "model": "K90 至尊版",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 707.0,
+      "capacityWh": 31.85,
+      "avgPowerW": 2.702970297,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1280,
+      "resolution_px_h": 2772,
+      "refresh_hz": 165.0
+    },
+    {
+      "brand": "红米",
+      "model": "Turbo 5 Max",
+      "soc": "Dimensity 9500s",
+      "minutes": 686.0,
+      "capacityWh": 33.53,
+      "avgPowerW": 2.9326530612,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1280,
+      "resolution_px_h": 2772,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "红米",
+      "model": "K90 Max",
+      "soc": "Dimensity 9500",
+      "minutes": 684.0,
+      "capacityWh": 31.85,
+      "avgPowerW": 2.7938596491,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1280,
+      "resolution_px_h": 2772,
+      "refresh_hz": 165.0
+    },
+    {
+      "brand": "红魔",
+      "model": "11 Pro",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 681.0,
+      "capacityWh": 29.66,
+      "avgPowerW": 2.613215859,
+      "screen_size_in": 6.85,
+      "resolution_px_w": 1216,
+      "resolution_px_h": 2688,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "小米",
+      "model": "17 Max",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 658.0,
+      "capacityWh": 29.84,
+      "avgPowerW": 2.7209726444,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1200,
+      "resolution_px_h": 2608,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "iQOO",
+      "model": "Z11 Turbo",
+      "soc": "Snapdragon 8 Gen 5",
+      "minutes": 658.0,
+      "capacityWh": 27.83,
+      "avgPowerW": 2.5376899696,
+      "screen_size_in": 6.59,
+      "resolution_px_w": 1260,
+      "resolution_px_h": 2750,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "iQOO",
+      "model": "Z10 Turbo+",
+      "soc": "Dimensity 9400+",
+      "minutes": 657.0,
+      "capacityWh": 29.72,
+      "avgPowerW": 2.7141552511,
+      "screen_size_in": 6.78,
+      "resolution_px_w": 1260,
+      "resolution_px_h": 2800,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "一加",
+      "model": "Ace6T",
+      "soc": "Snapdragon 8 Gen 5",
+      "minutes": 640.0,
+      "capacityWh": 30.88,
+      "avgPowerW": 2.895,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2800,
+      "refresh_hz": 165.0
+    },
+    {
+      "brand": "一加",
+      "model": "15T",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 624.0,
+      "capacityWh": 27.05,
+      "avgPowerW": 2.6009615385,
+      "screen_size_in": 6.32,
+      "resolution_px_w": 1216,
+      "resolution_px_h": 2640,
+      "refresh_hz": 165.0
+    },
+    {
+      "brand": "一加",
+      "model": "Ace6 至尊版",
+      "soc": "Dimensity 9500",
+      "minutes": 609.0,
+      "capacityWh": 31.6,
+      "avgPowerW": 3.1133004926,
+      "screen_size_in": 6.78,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2772,
+      "refresh_hz": 165.0
+    },
+    {
+      "brand": "iQOO",
+      "model": "Neo 11",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 608.0,
+      "capacityWh": 27.59,
+      "avgPowerW": 2.7226973684,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "荣耀",
+      "model": "Magic8 Pro",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 603.0,
+      "capacityWh": 26.54,
+      "avgPowerW": 2.6407960199,
+      "screen_size_in": 6.71,
+      "resolution_px_w": 1256,
+      "resolution_px_h": 2808,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "OPPO",
+      "model": "Find X9 Pro",
+      "soc": "Dimensity 9500",
+      "minutes": 600.0,
+      "capacityWh": 27.34,
+      "avgPowerW": 2.734,
+      "screen_size_in": 6.78,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2772,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "华为",
+      "model": "Nova 16",
+      "soc": "Kirin 9010S",
+      "minutes": 600.0,
+      "capacityWh": 25.98,
+      "avgPowerW": 2.598,
+      "screen_size_in": 6.68,
+      "resolution_px_w": 1280,
+      "resolution_px_h": 2800,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "华为",
+      "model": "Nova 16 Pro",
+      "soc": "Kirin 9010S",
+      "minutes": 596.0,
+      "capacityWh": 25.98,
+      "avgPowerW": 2.6154362416,
+      "screen_size_in": 6.84,
+      "resolution_px_w": 1320,
+      "resolution_px_h": 2856,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "iQOO",
+      "model": "15 Ultra",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 593.0,
+      "capacityWh": 27.08,
+      "avgPowerW": 2.7399662732,
+      "screen_size_in": 6.85,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "iQOO",
+      "model": "15T",
+      "soc": "Dimensity 9500 Monster",
+      "minutes": 591.0,
+      "capacityWh": 29.35,
+      "avgPowerW": 2.9796954315,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "红米",
+      "model": "K90 Pro Max",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 581.0,
+      "capacityWh": 28.13,
+      "avgPowerW": 2.9049913941,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1200,
+      "resolution_px_h": 2608,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "一加",
+      "model": "Ace6",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 580.0,
+      "capacityWh": 28.66,
+      "avgPowerW": 2.9648275862,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2800,
+      "refresh_hz": 165.0
+    },
+    {
+      "brand": "努比亚",
+      "model": "Z80 Ultra",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 578.0,
+      "capacityWh": 26.67,
+      "avgPowerW": 2.7685121107,
+      "screen_size_in": 6.85,
+      "resolution_px_w": 1216,
+      "resolution_px_h": 2688,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "华为",
+      "model": "Pura 90 Pro",
+      "soc": "Kirin 9030S",
+      "minutes": 576.0,
+      "capacityWh": 22.35,
+      "avgPowerW": 2.328125,
+      "screen_size_in": 6.6,
+      "resolution_px_w": 1256,
+      "resolution_px_h": 2760,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "红米",
+      "model": "K80 至尊版",
+      "soc": "Dimensity 9400+",
+      "minutes": 573.0,
+      "capacityWh": 27.78,
+      "avgPowerW": 2.9089005236,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1280,
+      "resolution_px_h": 2772,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "荣耀",
+      "model": "GT Pro",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 570.0,
+      "capacityWh": 27.51,
+      "avgPowerW": 2.8957894737,
+      "screen_size_in": 6.78,
+      "resolution_px_w": 1224,
+      "resolution_px_h": 2800,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "华为",
+      "model": "Nova 15 Pro",
+      "soc": "Kirin 9010S",
+      "minutes": 568.0,
+      "capacityWh": 24.21,
+      "avgPowerW": 2.5573943662,
+      "screen_size_in": 6.84,
+      "resolution_px_w": 1320,
+      "resolution_px_h": 2856,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "小米",
+      "model": "17T Pro",
+      "soc": "Dimensity 9500",
+      "minutes": 558.0,
+      "capacityWh": 25.82,
+      "avgPowerW": 2.776344086,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1280,
+      "resolution_px_h": 2772,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "iQOO",
+      "model": "15",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 557.0,
+      "capacityWh": 25.62,
+      "avgPowerW": 2.7597845601,
+      "screen_size_in": 6.85,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "OPPO",
+      "model": "Find X9s Pro",
+      "soc": "Dimensity 9500",
+      "minutes": 553.0,
+      "capacityWh": 25.64,
+      "avgPowerW": 2.7819168174,
+      "screen_size_in": 6.32,
+      "resolution_px_w": 1216,
+      "resolution_px_h": 2640,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "iQOO",
+      "model": "Neo 10 Pro+",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 553.0,
+      "capacityWh": 25.26,
+      "avgPowerW": 2.7406871609,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "一加",
+      "model": "15",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 552.0,
+      "capacityWh": 27.03,
+      "avgPowerW": 2.9380434783,
+      "screen_size_in": 6.78,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2772,
+      "refresh_hz": 165.0
+    },
+    {
+      "brand": "华为",
+      "model": "Pura 90 Pro Max",
+      "soc": "Kirin 9030S",
+      "minutes": 552.0,
+      "capacityWh": 22.35,
+      "avgPowerW": 2.4293478261,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1308,
+      "resolution_px_h": 2880,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "荣耀",
+      "model": "Magic8",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 552.0,
+      "capacityWh": 25.78,
+      "avgPowerW": 2.802173913,
+      "screen_size_in": 6.58,
+      "resolution_px_w": 1256,
+      "resolution_px_h": 2760,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "Realme",
+      "model": "GT8",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 544.0,
+      "capacityWh": 26.78,
+      "avgPowerW": 2.9536764706,
+      "screen_size_in": 6.79,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3136,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "华为",
+      "model": "Pura 90",
+      "soc": "Kirin 9010S",
+      "minutes": 542.0,
+      "capacityWh": 24.21,
+      "avgPowerW": 2.6800738007,
+      "screen_size_in": 6.8,
+      "resolution_px_w": 1320,
+      "resolution_px_h": 2856,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "vivo",
+      "model": "X300s",
+      "soc": "Dimensity 9500",
+      "minutes": 542.0,
+      "capacityWh": 25.81,
+      "avgPowerW": 2.857195572,
+      "screen_size_in": 6.78,
+      "resolution_px_w": 1260,
+      "resolution_px_h": 2800,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "小米",
+      "model": "17 Pro Max",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 536.0,
+      "capacityWh": 27.64,
+      "avgPowerW": 3.0940298507,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1200,
+      "resolution_px_h": 2608,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 17 Pro Max",
+      "soc": "Apple A19 Pro",
+      "minutes": 534.0,
+      "capacityWh": 18.75,
+      "avgPowerW": 2.106741573,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1320,
+      "resolution_px_h": 2868,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "小米",
+      "model": "17",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 525.0,
+      "capacityWh": 25.94,
+      "avgPowerW": 2.9645714286,
+      "screen_size_in": 6.3,
+      "resolution_px_w": 1220,
+      "resolution_px_h": 2656,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "OPPO",
+      "model": "Find X9",
+      "soc": "Dimensity 9500",
+      "minutes": 524.0,
+      "capacityWh": 25.65,
+      "avgPowerW": 2.9370229008,
+      "screen_size_in": 6.59,
+      "resolution_px_w": 1256,
+      "resolution_px_h": 2760,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "小米",
+      "model": "17T",
+      "soc": "Dimensity 8500 Ultra",
+      "minutes": 521.0,
+      "capacityWh": 25.82,
+      "avgPowerW": 2.973512476,
+      "screen_size_in": 6.59,
+      "resolution_px_w": 1268,
+      "resolution_px_h": 2756,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "红米",
+      "model": "K90",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 516.0,
+      "capacityWh": 26.52,
+      "avgPowerW": 3.0837209302,
+      "screen_size_in": 6.59,
+      "resolution_px_w": 1156,
+      "resolution_px_h": 2510,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "OPPO",
+      "model": "Find X9 Ultra",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 513.0,
+      "capacityWh": 25.64,
+      "avgPowerW": 2.9988304094,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "华为",
+      "model": "Mate 80",
+      "soc": "Kirin 9020",
+      "minutes": 512.0,
+      "capacityWh": 21.36,
+      "avgPowerW": 2.503125,
+      "screen_size_in": 6.75,
+      "resolution_px_w": 1280,
+      "resolution_px_h": 2832,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "一加",
+      "model": "Ace5 至尊版",
+      "soc": "Dimensity 9400+",
+      "minutes": 506.0,
+      "capacityWh": 25.28,
+      "avgPowerW": 2.9976284585,
+      "screen_size_in": 6.83,
+      "resolution_px_w": 1272,
+      "resolution_px_h": 2800,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "vivo",
+      "model": "X300 Pro",
+      "soc": "Dimensity 9500",
+      "minutes": 501.0,
+      "capacityWh": 24.55,
+      "avgPowerW": 2.9401197605,
+      "screen_size_in": 6.78,
+      "resolution_px_w": 1260,
+      "resolution_px_h": 2800,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "vivo",
+      "model": "X300",
+      "soc": "Dimensity 9500",
+      "minutes": 500.0,
+      "capacityWh": 22.34,
+      "avgPowerW": 2.6808,
+      "screen_size_in": 6.31,
+      "resolution_px_w": 1216,
+      "resolution_px_h": 2640,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "Realme",
+      "model": "GT8 Pro",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 499.0,
+      "capacityWh": 25.9,
+      "avgPowerW": 3.1142284569,
+      "screen_size_in": 6.79,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3136,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "华为",
+      "model": "Mate 70 Pro+",
+      "soc": "Kirin 9020",
+      "minutes": 496.0,
+      "capacityWh": 21.34,
+      "avgPowerW": 2.5814516129,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1316,
+      "resolution_px_h": 2832,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "华为",
+      "model": "Mate 80 Pro",
+      "soc": null,
+      "minutes": 494.0,
+      "capacityWh": 21.36,
+      "avgPowerW": 2.5943319838,
+      "screen_size_in": 6.75,
+      "resolution_px_w": 1280,
+      "resolution_px_h": 2832,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "华为",
+      "model": "Mate 80 Pro Max",
+      "soc": "Kirin 9030 Pro",
+      "minutes": 494.0,
+      "capacityWh": 22.31,
+      "avgPowerW": 2.7097165992,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1320,
+      "resolution_px_h": 2848,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "vivo",
+      "model": "X300 Ultra",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 490.0,
+      "capacityWh": 23.92,
+      "avgPowerW": 2.9289795918,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "小米",
+      "model": "17 Ultra",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 478.0,
+      "capacityWh": 25.11,
+      "avgPowerW": 3.1518828452,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1200,
+      "resolution_px_h": 2608,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "iQOO",
+      "model": "13",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 475.0,
+      "capacityWh": 22.97,
+      "avgPowerW": 2.9014736842,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 144.0
+    },
+    {
+      "brand": "OPPO",
+      "model": "Find X8 Ultra",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 472.0,
+      "capacityWh": 22.87,
+      "avgPowerW": 2.9072033898,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "红米",
+      "model": "K80 Pro",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 467.0,
+      "capacityWh": 22.62,
+      "avgPowerW": 2.9062098501,
+      "screen_size_in": 6.67,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3200,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "一加",
+      "model": "Ace5 Pro",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 465.0,
+      "capacityWh": 22.76,
+      "avgPowerW": 2.9367741935,
+      "screen_size_in": 6.78,
+      "resolution_px_w": 1264,
+      "resolution_px_h": 2780,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "小米",
+      "model": "17 Pro",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 460.0,
+      "capacityWh": 23.13,
+      "avgPowerW": 3.0169565217,
+      "screen_size_in": 6.3,
+      "resolution_px_w": 1220,
+      "resolution_px_h": 2656,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "荣耀",
+      "model": "Magic7 Pro",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 458.0,
+      "capacityWh": 21.97,
+      "avgPowerW": 2.8781659389,
+      "screen_size_in": 6.8,
+      "resolution_px_w": 1280,
+      "resolution_px_h": 2800,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "一加",
+      "model": "13",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 456.0,
+      "capacityWh": 22.31,
+      "avgPowerW": 2.9355263158,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "小米",
+      "model": "15s Pro",
+      "soc": "Xring O1",
+      "minutes": 454.0,
+      "capacityWh": 22.95,
+      "avgPowerW": 3.0330396476,
+      "screen_size_in": 6.73,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3200,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "小米",
+      "model": "15 Pro",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 445.0,
+      "capacityWh": 22.95,
+      "avgPowerW": 3.0943820225,
+      "screen_size_in": 6.73,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3200,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 17 Pro",
+      "soc": "Apple A19 Pro",
+      "minutes": 439.0,
+      "capacityWh": 15.53,
+      "avgPowerW": 2.1225512528,
+      "screen_size_in": 6.3,
+      "resolution_px_w": 1206,
+      "resolution_px_h": 2622,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "三星",
+      "model": "S26 Ultra",
+      "soc": "Snapdragon 8 Elite Gen 5",
+      "minutes": 435.0,
+      "capacityWh": 18.94,
+      "avgPowerW": 2.6124137931,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3120,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "vivo",
+      "model": "X200 Ultra",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 434.0,
+      "capacityWh": 22.35,
+      "avgPowerW": 3.0898617512,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3168,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 16 Pro Max",
+      "soc": "Apple A18 Pro",
+      "minutes": 423.0,
+      "capacityWh": 18.17,
+      "avgPowerW": 2.5773049645,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1320,
+      "resolution_px_h": 2868,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "小米",
+      "model": "15",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 422.0,
+      "capacityWh": 20.26,
+      "avgPowerW": 2.8805687204,
+      "screen_size_in": 6.36,
+      "resolution_px_w": 1200,
+      "resolution_px_h": 2670,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "三星",
+      "model": "S25 Ultra",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 406.0,
+      "capacityWh": 18.84,
+      "avgPowerW": 2.7842364532,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3120,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "三星",
+      "model": "S26",
+      "soc": null,
+      "minutes": 400.0,
+      "capacityWh": 16.29,
+      "avgPowerW": 2.4435,
+      "screen_size_in": 6.3,
+      "resolution_px_w": 1080,
+      "resolution_px_h": 2340,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 15 Pro Max",
+      "soc": "Apple A17 Pro",
+      "minutes": 396.0,
+      "capacityWh": 17.11,
+      "avgPowerW": 2.5924242424,
+      "screen_size_in": 6.7,
+      "resolution_px_w": 1290,
+      "resolution_px_h": 2796,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 17",
+      "soc": "Apple A19",
+      "minutes": 385.0,
+      "capacityWh": 14.35,
+      "avgPowerW": 2.2363636364,
+      "screen_size_in": 6.3,
+      "resolution_px_w": 1206,
+      "resolution_px_h": 2622,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "华为",
+      "model": "Mate 60 Pro",
+      "soc": "Kirin 9000S",
+      "minutes": 356.0,
+      "capacityWh": 19.15,
+      "avgPowerW": 3.2275280899,
+      "screen_size_in": 6.82,
+      "resolution_px_w": 1260,
+      "resolution_px_h": 2720,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "三星",
+      "model": "S25 Edge",
+      "soc": "Snapdragon 8 Elite",
+      "minutes": 354.0,
+      "capacityWh": 14.77,
+      "avgPowerW": 2.5033898305,
+      "screen_size_in": 6.7,
+      "resolution_px_w": 1440,
+      "resolution_px_h": 3120,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "谷歌",
+      "model": "Pixel 10 Pro XL",
+      "soc": "Google Tensor G5",
+      "minutes": 351.0,
+      "capacityWh": 19.76,
+      "avgPowerW": 3.3777777778,
+      "screen_size_in": 6.8,
+      "resolution_px_w": 1344,
+      "resolution_px_h": 2992,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 16",
+      "soc": "Apple A18",
+      "minutes": 342.0,
+      "capacityWh": 13.84,
+      "avgPowerW": 2.4280701754,
+      "screen_size_in": 6.1,
+      "resolution_px_w": 1179,
+      "resolution_px_h": 2556,
+      "refresh_hz": 60.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 16 Pro",
+      "soc": "Apple A18 Pro",
+      "minutes": 333.0,
+      "capacityWh": 13.94,
+      "avgPowerW": 2.5117117117,
+      "screen_size_in": 6.3,
+      "resolution_px_w": 1206,
+      "resolution_px_h": 2622,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone Air",
+      "soc": "Apple A19 Pro",
+      "minutes": 331.0,
+      "capacityWh": 12.26,
+      "avgPowerW": 2.2223564955,
+      "screen_size_in": 6.5,
+      "resolution_px_w": 1260,
+      "resolution_px_h": 2736,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 15 Pro",
+      "soc": "Apple A17 Pro",
+      "minutes": 300.0,
+      "capacityWh": 12.7,
+      "avgPowerW": 2.54,
+      "screen_size_in": 6.1,
+      "resolution_px_w": 1179,
+      "resolution_px_h": 2556,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 18 Pro",
+      "soc": "Apple A20 Pro",
+      "minutes": 470.0,
+      "capacityWh": 15.855,
+      "avgPowerW": 2.0240425532,
+      "screen_size_in": 6.3,
+      "resolution_px_w": 1206,
+      "resolution_px_h": 2622,
+      "refresh_hz": 120.0
+    },
+    {
+      "brand": "苹果",
+      "model": "iPhone 18 Pro Max",
+      "soc": "Apple A20 Pro",
+      "minutes": 637.0,
+      "capacityWh": 21.063,
+      "avgPowerW": 1.983956044,
+      "screen_size_in": 6.9,
+      "resolution_px_w": 1320,
+      "resolution_px_h": 2868,
+      "refresh_hz": 120.0
+    }
+  ]
+}
