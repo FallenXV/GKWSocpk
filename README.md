@@ -1,5 +1,7 @@
 # GKWSocpk
 
+English | [简体中文](README.zh-CN.md)
+
 Scrapes [socpk.com](https://socpk.com) CPU, GPU and battery results into CSV
 snapshots and compares them in a local web dashboard.
 
@@ -71,6 +73,10 @@ the list on the left. You can click to toggle a profile, shift-click to select a
 range, or use **Top 5**, **All shown** and **Clear**. Every chart has a ranking
 panel on its right, and hovering over a point shows its details. **Export chart**
 saves the chart as PNG or SVG.
+
+A small cyan triangle marks the corner of each chart where results are
+better, and the line under the chart says what that corner means (for example,
+top-left: more score for less power).
 
 The **Efficiency reference** switch draws the dashed guide lines described
 below. The note under the chart explains the line currently shown.

@@ -29,6 +29,7 @@ const ui = {
   selectionNote: element('selection-note'),
   sourceNote: element('source-note'),
   chartNote: element('chart-note'),
+  chartGuide: element('chart-guide'),
   rankHint: element('rank-hint'),
   statProfiles: element('stat-profiles'),
   statPoints: element('stat-points'),
@@ -115,6 +116,18 @@ function socAxes(view) {
         yLabel: 'Average minutes per Wh', title: 'Processor-average efficiency',
         rankLabel: 'Average minutes per Wh', higher: true };
 }
+
+/* Where the better results sit on each view, and a one-line reading of it. */
+const BETTER = {
+  'Performance curve': ['top-left', 'more score for less power'],
+  'Efficiency curve': ['top-left', 'more score per watt at lower power'],
+  'Efficiency vs score': ['top-right', 'higher score and more score per watt'],
+  'Runtime vs capacity': ['top-left', 'longer runtime from a smaller battery'],
+  'Energy efficiency': ['top-left', 'longer runtime from a smaller battery'],
+  'Average power draw': ['bottom-right', 'lower power draw with a bigger battery'],
+  'SoC Average Power Draw': ['bottom-right', 'lower power draw with a bigger battery'],
+  'SoC Average Efficiency': ['top-left', 'more minutes per Wh at lower power'],
+};
 
 /* ---------- colours ---------- */
 
@@ -1101,6 +1114,10 @@ function refresh() {
   }
 
   addEfficiencyReference(scene, entry, chosen);
+  const better = !scene.main.message && BETTER[view];
+  scene.main.better = better ? better[0] : null;
+  ui.chartGuide.textContent = better ? `▲ Better toward the ${better[0]}: ${better[1]}` : '';
+  ui.chartGuide.hidden = !better;
   state.lastRank = scene.rank;
   surface.setScene(scene);
   updateStats(entry, chosen);

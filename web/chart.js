@@ -293,7 +293,7 @@ function drawLegendGlyph(ctx, shape, x, y, color) {
   }
 }
 
-function drawLegend(ctx, plot, legend, occupied) {
+function drawLegend(ctx, plot, legend, occupied, avoid) {
   if (!legend || !legend.items.length) return;
   const columns = Math.max(1, legend.cols || 1);
   const rows = Math.ceil(legend.items.length / columns);
@@ -310,11 +310,11 @@ function drawLegend(ctx, plot, legend, occupied) {
   // Pick the corner that hides the fewest plotted points.
   const margin = 10;
   const corners = [
-    { x: plot.x + plot.width - width - margin, y: plot.y + margin },
-    { x: plot.x + margin, y: plot.y + margin },
-    { x: plot.x + plot.width - width - margin, y: plot.y + plot.height - height - margin },
-    { x: plot.x + margin, y: plot.y + plot.height - height - margin },
-  ];
+    { name: 'top-right', x: plot.x + plot.width - width - margin, y: plot.y + margin },
+    { name: 'top-left', x: plot.x + margin, y: plot.y + margin },
+    { name: 'bottom-right', x: plot.x + plot.width - width - margin, y: plot.y + plot.height - height - margin },
+    { name: 'bottom-left', x: plot.x + margin, y: plot.y + plot.height - height - margin },
+  ].filter((corner) => corner.name !== avoid);
   let best = corners[0];
   let bestCost = Infinity;
   for (const corner of corners) {
@@ -348,6 +348,28 @@ function drawLegend(ctx, plot, legend, occupied) {
     ctx.fillStyle = THEME.text;
     ctx.fillText(ellipsize(ctx, item.text, columnWidth - 26), x + 24, y);
   });
+}
+
+/* A small unlabelled triangle tucked into the corner where results are better. */
+function drawBetterCorner(ctx, plot, corner) {
+  if (!corner) return;
+  const inset = 6;
+  const size = 14;
+  const right = corner.endsWith('right');
+  const bottom = corner.startsWith('bottom');
+  const x = right ? plot.x + plot.width - inset : plot.x + inset;
+  const y = bottom ? plot.y + plot.height - inset : plot.y + inset;
+  const dx = right ? -size : size;
+  const dy = bottom ? -size : size;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + dx, y);
+  ctx.lineTo(x, y + dy);
+  ctx.closePath();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = THEME.cyan;
+  ctx.fill();
+  ctx.globalAlpha = 1;
 }
 
 /* ---------- main panel ---------- */
@@ -527,7 +549,8 @@ function drawMain(ctx, panel, main) {
     }
   });
 
-  drawLegend(ctx, plot, main.legend, occupied);
+  drawBetterCorner(ctx, plot, main.better);
+  drawLegend(ctx, plot, main.legend, occupied, main.better);
   return { plot, xScale, yScale };
 }
 

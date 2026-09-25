@@ -445,6 +445,7 @@ button, input, select { font: inherit; color: inherit; }
   color: var(--faint);
   font-size: 11px;
 }
+.chart-guide { color: var(--muted); white-space: nowrap; }
 .rank-hint { white-space: nowrap; }
 .reference-slot { height: 40px; flex: 0 0 40px; overflow-y: auto; }
 
