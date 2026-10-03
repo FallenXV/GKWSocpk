@@ -156,6 +156,13 @@ const Analytics = (() => {
   function controlsFor(entry, chosen) {
     controls.replaceChildren();
     const s=settings.get(entry.key);
+    if (entry.kind === 'charging') {
+      node('button', 'Clear sort', controls, {type:'button', class:'btn', id:'analysis-clear-sort'})
+        .addEventListener('click', () => { s.sorts = {}; draw(); });
+      node('button', 'Export analysis CSV', controls, {type:'button', class:'btn', id:'analysis-export'})
+        .addEventListener('click', exportCsv);
+      return;
+    }
     const modes=entry.kind==='curve' ? [['targets','Equal power / performance'],['tradeoffs','Power trade-offs'],['frontier','Published-point frontier'],['baseline','Baseline / generation comparison']] : [['groups','Phone power grouped by processor'],['runtime','Runtime / generation comparison']];
     field('Analysis','analysis-mode',s.mode,{},v=>{s.mode=v;controlsFor(entry,chosen);},modes);
     field('Baseline','analysis-baseline',s.baseline,{},v=>s.baseline=v, chosen.map(p=>[p.label,p.label]));
@@ -263,11 +270,20 @@ const Analytics = (() => {
       if(s.mode==='tradeoffs')tradeoffs(profiles);
       if(s.mode==='frontier')frontier(profiles);
       if(s.mode==='baseline')baseline(profiles,s);
+    } else if (entry.kind === 'charging') {
+      table('Charging summary', ['Device', 'Rated charger W', 'Full charge min', 'Total input Wh',
+        'Average input W', 'Peak interval W', 'Source'], profiles.map(p => [p.label,
+        fmt(p.chargerPowerW, 0), fmt(p.durationMinutes, 2), fmt(p.totalEnergyWh, 2),
+        fmt(p.averagePowerW, 2), fmt(p.peakPowerW, 2), p.sources.join('; ')]), 'analysis-charging');
+      note('Input energy is measured at the power supply and includes circuit losses; it is not battery capacity or state of charge. Power curves use ΔWh × 60 / Δminutes at interval midpoints, so peak values depend on sample spacing. Full-charge summaries use published metadata. Multiple source runs are plotted separately and excluded from summary rankings.');
     } else battery(profiles,s);
   }
   function exportCsv() {
     const s=settings.get(context.entry.key);
-    const rows=[['Dataset',context.entry.key],['Snapshot loaded at',context.generated],['Settings',JSON.stringify(s)],['Selected profiles',context.profiles.map(p=>p.label).join('; ')],['Selected processors',context.socs.map(p=>p.soc).join('; ')],['Sources',context.profiles.flatMap(p=>p.sources||p.series.map(s=>s.source)).join('; ')],['Method','Published snapshots; linear interpolation only within brackets; no extrapolation. Battery scenarios use imprint energy and constant estimated power.'],[],...exported];
+    const method = context.entry.kind === 'charging'
+      ? 'Published input energy includes circuit losses. Interval power = 60 × delta Wh / delta minutes. Full-charge summaries use source metadata; multiple runs excluded from rankings.'
+      : 'Published snapshots; linear interpolation only within brackets; no extrapolation. Battery scenarios use imprint energy and constant estimated power.';
+    const rows=[['Dataset',context.entry.key],['Snapshot loaded at',context.generated],['Settings',JSON.stringify(s)],['Selected profiles',context.profiles.map(p=>p.label).join('; ')],['Selected processors',context.socs.map(p=>p.soc).join('; ')],['Sources',context.profiles.flatMap(p=>p.sources||p.series.map(s=>s.source)).join('; ')],['Method',method],[],...exported];
     const quote=v=>'"'+String(v??'').replace(/^[=+@\-]/,"'$&").replaceAll('"','""')+'"';
     const blob=new Blob(['\ufeff'+rows.map(r=>r.map(quote).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
     const url=URL.createObjectURL(blob),a=node('a',null,document.body,{href:url,download:`socpk-${context.entry.key.replaceAll(' ','-')}-${s.mode}-analysis.csv`});a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);

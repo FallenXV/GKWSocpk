@@ -18,6 +18,7 @@ import pandas as pd
 
 from cpu_benchmarks import CPU_BENCHMARKS, CORE_COLUMNS, cpu_profile_label
 from battery_soc import canonical_soc_name
+from battery_charging import CHARGING_VIEWS, charging_points
 
 
 PALETTE = (
@@ -274,6 +275,15 @@ DATASET_DEFINITIONS = {
         dedupe=("GPU", "Board_Power_W", "GPU_Score"),
         views=("Performance curve", "Efficiency curve", "Efficiency vs score"),
     ),
+    "Charging": DatasetDefinition(
+        key="Charging", title="Battery charging", kicker="Input energy and charging time",
+        id_column="model", tab_label="CHARGING",
+        required=frozenset({"chargingSeries", "model", "chargingMinutes", "chargedEnergyWh"}),
+        numeric=("chargingMinutes", "chargedEnergyWh", "chargerPowerW",
+                 "fullDurationMinutes", "totalEnergyWh", "averageChargingPowerW"),
+        dedupe=("chargingSeries", "chargingMinutes", "chargedEnergyWh", "__source"),
+        views=CHARGING_VIEWS, score_decimals=2,
+    ),
     "Battery": DatasetDefinition(
         key="Battery",
         title="Battery endurance",
@@ -301,7 +311,7 @@ def classify_columns(columns: Iterable[str]) -> str | None:
     column_set = frozenset(columns)
     if sum(benchmark.score_column in column_set for benchmark in CPU_BENCHMARKS.values()) > 1:
         raise ValueError("CPU benchmarks must be stored in separate CSVs.")
-    for key in (*[b.dataset_key for b in CPU_BENCHMARKS.values()], "GPU", "Battery"):
+    for key in (*[b.dataset_key for b in CPU_BENCHMARKS.values()], "GPU", "Charging", "Battery"):
         definition = DATASET_DEFINITIONS[key]
         if definition.required.issubset(column_set):
             return key
@@ -385,7 +395,25 @@ def _prepare_frame(
         if column in frame:
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
-    if kind in CURVE_DATASETS:
+    if kind == "Charging":
+        if frame[["chargingSeries", "model"]].isna().any().any():
+            raise ValueError("Charging rows require a series ID and device name.")
+        frame["chargingSeries"] = frame["chargingSeries"].astype(str).str.strip()
+        frame["__label"] = frame["model"].astype(str).str.strip()
+        if frame["chargingSeries"].eq("").any() or frame["__label"].eq("").any():
+            raise ValueError("Charging rows require a series ID and device name.")
+        # IDs distinguish charger variants even when published names coincide.
+        frame["__label"] += " [" + frame["chargingSeries"] + "]"
+        normalized = []
+        for _, rows in frame.groupby("chargingSeries", sort=False):
+            points = charging_points(rows[["chargingMinutes", "chargedEnergyWh"]].values.tolist())
+            clean = pd.DataFrame(points, columns=["chargingMinutes", "chargedEnergyWh"])
+            for column in rows.columns.difference(clean.columns):
+                clean[column] = rows.iloc[0][column]
+            normalized.append(clean)
+        if normalized:
+            frame = pd.concat(normalized, ignore_index=True)
+    elif kind in CURVE_DATASETS:
         score_column = definition.score_column
         if "Efficiency" not in frame:
             frame["Efficiency"] = frame[score_column] / frame["Board_Power_W"]
@@ -491,6 +519,10 @@ def collection_summary(collections: dict[str, pd.DataFrame]) -> dict[str, tuple[
 # Shown when a tab has no snapshot yet, so both front ends name the same file
 # and the same collector command.
 DATASET_SOURCE_HINTS = {
+    "Charging": (
+        "snapshots/charging_curves.csv",
+        "python Battery/charging_parser.py",
+    ),
     **{
         benchmark.dataset_key: (
             "snapshots/" + benchmark.filename,

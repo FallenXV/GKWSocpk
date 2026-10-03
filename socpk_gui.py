@@ -55,6 +55,7 @@ _ensure_macos_tk()
 
 from cpu_benchmarks import CPU_BENCHMARKS, CORE_COLUMNS, cpu_profile_label
 from battery_soc import canonical_soc_name
+from battery_charging import CHARGING_METRICS, charging_profiles
 
 import matplotlib
 import numpy as np
@@ -705,7 +706,12 @@ class ComparisonDashboard:
 
     def _ranked_labels(self, key: str) -> list[str]:
         frame = self._core_filtered_frame(key)
-        if key in CURVE_DATASETS:
+        if key == "Charging":
+            view = self.view_var.get() if key == self.dataset_key else "Charged energy"
+            profiles = charging_profiles(frame)
+            ranking = self._charging_ranking(profiles, view)
+            return list(ranking.index) + [p["label"] for p in profiles if p["label"] not in ranking.index]
+        elif key in CURVE_DATASETS:
             definition = DATASET_DEFINITIONS[key]
             view = self.view_var.get() if key == self.dataset_key and hasattr(self, "view_var") else definition.views[0]
             metric = definition.score_column if view == "Performance curve" else "Efficiency"
@@ -818,6 +824,8 @@ class ComparisonDashboard:
         self.hover_horizontal = None
         if chart_frame.empty:
             self._draw_empty()
+        elif self.dataset_key == "Charging":
+            self._draw_charging_charts(chart_frame)
         elif self.dataset_key in CURVE_DATASETS:
             self._draw_curve_charts(chart_frame)
         else:
@@ -1020,6 +1028,74 @@ class ComparisonDashboard:
         self._draw_ranking(ranking, rank_label, higher_is_better=True)
         note = " · dotted lines join sparse samples" if kind in {"SPEC INT", "SPEC FP"} else ""
         self.chart_note.configure(text=f"{len(frame):,} curve points shown{note}")
+
+    @staticmethod
+    def _charging_ranking(profiles, view):
+        metric, _label, higher = CHARGING_METRICS[view]
+        return pd.Series({p["label"]: p[metric] for p in profiles
+                          if p[metric] is not None}, dtype=float).sort_values(ascending=not higher)
+
+    def _draw_charging_charts(self, frame: pd.DataFrame) -> None:
+        view = self.view_var.get()
+        profiles = charging_profiles(frame)
+        duration = view == "Charging duration"
+        power = view == "Charging power"
+        x_label = "Total input energy (Wh)" if duration else "Charging time (min)"
+        y_label = ("Full charge time (min)" if duration else
+                   "Interval-average input power (W)" if power else "Cumulative input energy (Wh)")
+        subtitle = ("Derived ΔWh / Δh at interval midpoints" if power else
+                    "Published full-charge metadata" if duration else
+                    "Power-supply input energy, including circuit losses")
+        self._style_axis(self.main_axis, view.upper(), subtitle)
+        self.main_axis.set_xlabel(x_label, labelpad=6)
+        self.main_axis.set_ylabel(y_label, labelpad=6)
+        shown = 0
+        for index, profile in enumerate(profiles):
+            color = PALETTE[index % len(PALETTE)]
+            labelled = False
+            for source_index, series in enumerate(profile["series"]):
+                if duration:
+                    coords = ([[series["totalEnergyWh"], series["durationMinutes"]]]
+                              if series["totalEnergyWh"] is not None
+                              and series["durationMinutes"] is not None else [])
+                else:
+                    coords = series["powerPoints"] if power else series["points"]
+                if not coords:
+                    continue
+                shown += len(coords)
+                x, y = zip(*coords)
+                (line,) = self.main_axis.plot(
+                    x, y, color=color, linewidth=2.2,
+                    linestyle="None" if duration else "-", marker="o",
+                    markersize=6 if duration else 2.5,
+                    alpha=0.94 if source_index == 0 else 0.5,
+                    label="_nolegend_" if labelled else profile["label"], picker=5,
+                )
+                labelled = True
+                line._socpk_label = profile["label"]
+                self.line_artists.append(line)
+                for minute, energy in coords:
+                    self.hover_points.append(HoverPoint(
+                        x=minute, y=energy, label=profile["label"], color=color,
+                        details=(f"{profile['label']}\n{x_label}: {minute:.2f}\n"
+                                 f"{y_label}: {energy:.2f}\nSource: {series['source']}"),
+                    ))
+        if shown:
+            legend = self.main_axis.legend(
+                loc="best", facecolor=PANEL_2, edgecolor=GRID, labelcolor=TEXT,
+                fontsize=8, ncols=2 if len(profiles) > 5 else 1,
+            )
+            legend.get_frame().set_alpha(0.92)
+        else:
+            self.main_axis.text(0.5, 0.5, "No values available for this view",
+                                transform=self.main_axis.transAxes, ha="center", color=MUTED)
+        _metric, rank_label, higher = CHARGING_METRICS[view]
+        self._draw_ranking(self._charging_ranking(profiles, view), rank_label, higher)
+        self.chart_note.configure(text=(
+            f"{shown:,} points · Input energy includes losses · "
+            + ("Peak power depends on sample spacing" if power else
+               "Full-charge rankings require one source and published metadata")
+        ))
 
     def _draw_battery_charts(self, frame: pd.DataFrame) -> None:
         view = self.view_var.get()
@@ -1398,6 +1474,8 @@ class ComparisonDashboard:
         label_width = max(16, int(self.rank_axis.get_window_extent().width / 5.5))
         short_labels = [self._short_label(self._legend_label(label), label_width) for label in values.index]
         selected_labels = sorted(self.ranking_values.index, key=str.casefold)
+        if self.dataset_key == "Charging":
+            selected_labels = sorted(self._selected_frame()["__label"].unique(), key=str.casefold)
         color_map = {
             label: PALETTE[index % len(PALETTE)]
             for index, label in enumerate(selected_labels)
@@ -1508,6 +1586,9 @@ class ComparisonDashboard:
             self.stat_values["points"].configure(text=f"{len(frame):,}")
         if frame.empty:
             leader_text = "—"
+        elif self.dataset_key == "Charging":
+            ranking = self._charging_ranking(charging_profiles(frame), self.view_var.get())
+            leader_text = str(ranking.index[0]) if not ranking.empty else "—"
         elif self.dataset_key in CURVE_DATASETS:
             metric = (DATASET_DEFINITIONS[self.dataset_key].score_column
                       if self.view_var.get() == "Performance curve" else "Efficiency")

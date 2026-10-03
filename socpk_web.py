@@ -28,6 +28,7 @@ from typing import Any
 import pandas as pd
 
 from cpu_benchmarks import CPU_BENCHMARKS
+from battery_charging import charging_profiles
 from socpk_data import (
     CURVE_DATASETS,
     DATASET_DEFINITIONS,
@@ -253,7 +254,7 @@ def build_payload(
             "sourceCount": 0,
             "profiles": [],
             "pointCount": 0,
-            "kind": "curve" if key in CURVE_DATASETS else "battery",
+            "kind": "charging" if key == "Charging" else "curve" if key in CURVE_DATASETS else "battery",
             "coreGroups": [],
             "coreNames": [],
             "scoreDecimals": definition.score_decimals,
@@ -263,9 +264,12 @@ def build_payload(
         }
         frame = collections.get(key)
         if frame is not None and not frame.empty:
-            entry.update(
-                _curve_dataset(key, frame) if key in CURVE_DATASETS else _battery_dataset(frame)
-            )
+            if key == "Charging":
+                entry.update(profiles=charging_profiles(frame), pointCount=len(frame))
+            else:
+                entry.update(
+                    _curve_dataset(key, frame) if key in CURVE_DATASETS else _battery_dataset(frame)
+                )
             entry["sourceCount"] = int(frame["__source"].nunique())
         datasets.append(entry)
 

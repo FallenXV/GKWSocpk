@@ -107,6 +107,33 @@ function batteryAxes(view) {
            rankKey: 'hours', rankLabel: 'Runtime (hours)', higher: true };
 }
 
+function chargingAxes(view) {
+  if (view === 'Charging duration') return {
+    xLabel: 'Total input energy (Wh)', yLabel: 'Full charge time (min)',
+    rankKey: 'durationMinutes', rankLabel: 'Full charge time (min)', higher: false,
+  };
+  if (view === 'Charging power') return {
+    xLabel: 'Charging time (min)', yLabel: 'Interval-average input power (W)',
+    rankKey: 'peakPowerW', rankLabel: 'Peak interval power (W)', higher: true,
+  };
+  return { xLabel: 'Charging time (min)', yLabel: 'Cumulative input energy (Wh)',
+    rankKey: 'averagePowerW', rankLabel: 'Average input power (W)', higher: true };
+}
+
+function chargingCoordinates(series, view) {
+  if (view === 'Charging duration') {
+    return Number.isFinite(series.totalEnergyWh) && Number.isFinite(series.durationMinutes)
+      ? [[series.totalEnergyWh, series.durationMinutes]] : [];
+  }
+  return view === 'Charging power' ? series.powerPoints : series.points;
+}
+
+function chargingRanking(profiles, view) {
+  const axes = chargingAxes(view);
+  return profiles.filter(p => Number.isFinite(p[axes.rankKey]))
+    .slice().sort((a, b) => (axes.higher ? -1 : 1) * (a[axes.rankKey] - b[axes.rankKey]));
+}
+
 function socAxes(view) {
   return view === 'SoC Average Power Draw'
     ? { xKey: 'capacityWh', yKey: 'powerW', xLabel: 'Average battery capacity (Wh)',
@@ -145,6 +172,11 @@ function extentOf(items) {
 
 /** Where every profile of a list sits on one figure, selection ignored. */
 function figureGeometry(entry, view, list) {
+  if (entry.kind === 'charging') {
+    const items = entry.profiles.map(profile => ({ id: profile.label,
+      points: profile.series.flatMap(series => chargingCoordinates(series, view)) }));
+    return { items, extent: extentOf(items) };
+  }
   if (list === 'socs') {
     const averages = entry.socAverages || [];
     if (SOC_VIEWS.has(view)) {
@@ -379,6 +411,11 @@ function rankedIds(list) {
       .map((average) => average.soc);
   }
   const profiles = filteredProfiles();
+  if (entry.kind === 'charging') {
+    const ranked = chargingRanking(profiles, view).map(profile => profile.label);
+    // Curves without full-charge metadata remain selectable and visible.
+    return [...ranked, ...profiles.filter(p => !ranked.includes(p.label)).map(p => p.label)];
+  }
   if (entry.kind === 'curve') {
     const index = view === 'Performance curve' ? 1 : 2;
     return profiles
@@ -543,7 +580,8 @@ function renderListTabs() {
   }
   const socs = activeList() === 'socs';
   ui.searchLabel.textContent = socs ? 'Search processors' : 'Search profiles';
-  ui.search.placeholder = socs ? 'Processor name' : 'Chip or core name';
+  ui.search.placeholder = socs ? 'Processor name'
+    : dataset().kind === 'charging' || dataset().kind === 'battery' ? 'Device name' : 'Chip or core name';
 }
 
 function renderViews() {
@@ -715,6 +753,49 @@ function curveScene(entry, profiles) {
       items: rankItems(ranking, true, decimals),
       offset: state.rankOffsets[state.key] || 0,
     },
+  };
+}
+
+function chargingScene(entry, profiles) {
+  const view = currentView(), axes = chargingAxes(view), colors = colorMap('devices');
+  const polylines = [], dots = [], legend = [], points = [];
+  for (const profile of profiles) {
+    const color = colors.get(profile.label);
+    let shown = false;
+    profile.series.forEach((series, index) => {
+      const coordinates = chargingCoordinates(series, view);
+      if (!coordinates.length) return;
+      shown = true;
+      if (view !== 'Charging duration' && coordinates.length > 1) {
+        polylines.push({pts: coordinates, color, width: 2.4, alpha: index ? 0.5 : 0.94});
+      }
+      for (const [x, y] of coordinates) {
+        dots.push({x, y, r: view === 'Charging duration' ? 5 : 2.3, fill: color, alpha: 0.8});
+        points.push({x, y, color, details: [profile.label,
+          `${axes.xLabel}: ${fixed(x, 2)}`, `${axes.yLabel}: ${fixed(y, 2)}`,
+          `Rated charger: ${Number.isFinite(profile.chargerPowerW) ? fixed(profile.chargerPowerW, 0) + ' W' : 'unavailable'}`,
+          `Source: ${series.source}`].join('\n')});
+      }
+    });
+    if (shown) legend.push({text: profile.legend, color, shape: view === 'Charging duration' ? 'dot' : 'line'});
+  }
+  hoverPoints = points;
+  ui.chartNote.textContent = `${points.length.toLocaleString()} points · Input energy includes circuit losses`;
+  const ranking = chargingRanking(profiles, view).map(profile => ({
+    label: profile.label, value: profile[axes.rankKey], color: colors.get(profile.label),
+  }));
+  const subtitle = view === 'Charging power'
+    ? 'Derived ΔWh / Δh at interval midpoints; sample spacing affects peaks'
+    : view === 'Charging duration' ? 'Published full-charge duration and total input energy'
+      : 'Power-supply input energy; includes circuit losses';
+  return {
+    main: {title: view.toUpperCase(), subtitle, xLabel: axes.xLabel, yLabel: axes.yLabel,
+      polylines, dots, legend: {items: legend, cols: legend.length > 5 ? 2 : 1},
+      ...(!points.length ? {message: {title: 'No values available for this view',
+        lines: [{text: 'Choose another view or device.'}]}} : {})},
+    rank: {title: 'Ranking', subtitle: axes.higher ? '↑ higher input power' : '↓ shorter duration',
+      xLabel: axes.rankLabel, items: rankItems(ranking, axes.higher, 2),
+      emptyText: 'No single-source metrics available', offset: state.rankOffsets[state.key] || 0},
   };
 }
 
@@ -1062,7 +1143,12 @@ function updateStats(entry, chosen) {
 
   if (!chosen.length) { ui.statLeader.textContent = '—'; return; }
   let leader = chosen[0];
-  if (entry.kind === 'curve') {
+  if (entry.kind === 'charging') {
+    leader = chargingRanking(chosen, view)[0];
+    ui.statLeader.textContent = leader ? leader.label : '—';
+    ui.statLeader.title = ui.statLeader.textContent;
+    return;
+  } else if (entry.kind === 'curve') {
     const index = view === 'Performance curve' ? 1 : 2;
     const peak = (profile) =>
       Math.max(...profile.series.flatMap((item) => item.points.map((point) => point[index])));
@@ -1107,6 +1193,8 @@ function refresh() {
     hoverPoints = [];
     scene = emptyScene();
     ui.chartNote.textContent = 'No profiles selected';
+  } else if (entry.kind === 'charging') {
+    scene = chargingScene(entry, chosen);
   } else if (entry.kind === 'curve') {
     scene = curveScene(entry, chosen);
   } else {

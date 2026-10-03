@@ -27,6 +27,7 @@ reproduction.
 
 ```powershell
 python Battery\battery_parser.py --auto-soc
+python Battery\charging_parser.py
 python "Performance Benchmark\cpu_curve_parser.py" --benchmark all
 python "Performance Benchmark\gpu_curve_parser.py"
 python "Performance Benchmark\laptop_gpu_curve_parser.py"
@@ -43,6 +44,7 @@ Snapshots are written to `snapshots/`:
 | `gpu_snl_curves.csv` | Phone GPU, 3DMark Steel Nomad Light |
 | `laptop_gpu_curves.csv` | Laptop GPU, 3DMark Time Spy |
 | `battery_results.csv` | Battery test 5.0 runtime, capacity and power |
+| `charging_curves.csv` | Charging time, input energy and charger metadata |
 
 Existing files are never overwritten. If a name is already taken, the new
 snapshot gets a timestamp suffix, and the dashboard loads the newest one.
@@ -52,6 +54,8 @@ Useful options:
 - **CPU:** `--benchmark GB6|GB7|SPEC2026_INT|SPEC2026_FP|all`, `--cpus "A19 Pro"`,
   `--core-group super|large|medium|small`
 - **GPU:** `--gpus` to limit which GPUs are scraped
+- **Charging:** `--devices "device name"` (or series IDs) selects devices;
+  `--output` chooses a new snapshot destination.
 - **Battery:** `--auto-soc` looks up each phone's processor on GSMArena and caches
   the result in `.gsm_cache/`. `--spec-offline` reuses only that cache, and
   `--spec 'Brand|Model=url'` fixes a single phone by hand.
@@ -68,7 +72,7 @@ This opens the dashboard in your browser. It runs only on `127.0.0.1`, and
 nothing is uploaded. Stop it with Ctrl-C.
 
 Each tab is one dataset: GB6 MULTI, GB7 MULTI, SPEC26 INT, SPEC26 FP, GPU,
-LAPTOP GPU and BATTERY. Pick a chart from **Compare**, then choose profiles in
+LAPTOP GPU, CHARGING and BATTERY. Pick a chart from **Compare**, then choose profiles in
 the list on the left. You can click to toggle a profile, shift-click to select a
 range, or use **Top 5**, **All shown** and **Clear**. Every chart has a ranking
 panel on its right, and hovering over a point shows its details. **Export chart**
@@ -163,6 +167,27 @@ confidence are left out.
 
 On the device charts, **Overlay average lines** draws one labelled line for
 each selected processor.
+
+## Charging charts
+
+Collect with `python Battery/charging_parser.py`, then choose **Reload data**
+and **CHARGING** in either dashboard. The collector reads SoCPK's
+[charging chart](https://www.socpk.com/charge-curves) and creates a separate
+snapshot without changing battery-endurance files.
+
+- **Charged energy:** cumulative input Wh against charging minutes, ranked by
+  published average input power.
+- **Charging power:** interval-average W derived as `60 × ΔWh / Δminutes`,
+  plotted at interval midpoints and ranked by peak interval power. Peaks depend
+  on sample spacing; these are derived values, not instantaneous measurements.
+- **Charging duration:** published full-charge minutes against total input Wh,
+  ranked by shortest duration.
+
+Energy is measured at the power supply and includes circuit losses; it is not
+usable battery capacity or charge percentage. Missing full-charge metadata
+stays unavailable. Separate source runs remain separate curves and are excluded
+from combined profile rankings. The web Analysis lab provides a sortable,
+exportable charging summary with rated charger power and source filenames.
 
 ## Analysis lab
 
