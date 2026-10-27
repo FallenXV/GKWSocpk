@@ -41,11 +41,18 @@ def charging_points(points):
         raise ValueError("Charging series contains no points.")
     ordered = []
     for point in points:
-        if (not isinstance(point, (list, tuple)) or len(point) != 2
-                or not all(isinstance(v, (int, float)) and not isinstance(v, bool)
-                           and math.isfinite(v) and v >= -0.001 for v in point)):
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
             raise ValueError("Invalid charging time/energy point.")
-        ordered.append(tuple(max(0.0, round(float(v), 3)) for v in point))
+        minute, energy = point
+        # This runs twice per loaded sample; avoid generator allocation for
+        # the fixed pair while retaining the same validation and rounding.
+        if (not isinstance(minute, (int, float)) or isinstance(minute, bool)
+                or not math.isfinite(minute) or minute < -0.001
+                or not isinstance(energy, (int, float)) or isinstance(energy, bool)
+                or not math.isfinite(energy) or energy < -0.001):
+            raise ValueError("Invalid charging time/energy point.")
+        ordered.append((max(0.0, round(float(minute), 3)),
+                        max(0.0, round(float(energy), 3))))
     result = []
     for minute, energy in sorted(ordered):
         if result and minute == result[-1][0]:

@@ -189,22 +189,21 @@ def add_soc_average_columns(frame: pd.DataFrame) -> pd.DataFrame:
     frame = frame.drop(columns=[column for column in SOC_AVERAGE_COLUMNS if column in frame])
 
     metrics = ["capacityWh", "avgPowerW", "minPerWh", "hours"]
-    profile_rows = []
-    for label, rows in frame.groupby("__label", sort=False):
-        socs = [value for value in rows["soc"] if value]
-        if not socs:
-            continue
-        profile_rows.append({
-            "__label": label,
-            "soc": socs[0],
-            **{metric: pd.to_numeric(rows[metric], errors="coerce").mean() for metric in metrics},
-        })
-    if not profile_rows:
+    profiles = frame[["__label", "soc", *metrics]].copy()
+    # GroupBy.first skips missing names, retaining the first known processor
+    # while every row still contributes to the device's metric averages.
+    profiles["soc"] = profiles["soc"].replace("", None)
+    profiles[metrics] = profiles[metrics].apply(pd.to_numeric, errors="coerce")
+    profiles = (
+        profiles.groupby("__label", sort=False, as_index=False)
+        .agg({"soc": "first", **{metric: "mean" for metric in metrics}})
+        .dropna(subset=["soc"])
+    )
+    if profiles.empty:
         for column in SOC_AVERAGE_COLUMNS:
             frame[column] = np.nan
         return frame
 
-    profiles = pd.DataFrame(profile_rows)
     averages = (
         profiles.groupby("soc", as_index=False)
         .agg(
@@ -359,10 +358,14 @@ def discover_csv_files(root: Path) -> list[Path]:
         "archive", "artifacts", "tests",
     }
     files: list[Path] = []
-    for path in root.rglob("*.csv"):
-        if any(part in ignored for part in path.relative_to(root).parts):
-            continue
-        files.append(path)
+    for directory, directories, filenames in root.walk():
+        # Prune before descending, especially into installed packages and
+        # snapshot archives, rather than discarding their CSVs afterwards.
+        directories[:] = [name for name in directories if name not in ignored]
+        for name in filenames:
+            path = directory / name
+            if name not in ignored and path.match("*.csv"):
+                files.append(path)
 
     # new_snapshot() appends this suffix rather than overwriting prior data.
     # Group those siblings so automatic discovery loads the newest snapshot,
@@ -420,8 +423,9 @@ def _prepare_frame(
         for _, rows in frame.groupby("chargingSeries", sort=False):
             points = charging_points(rows[["chargingMinutes", "chargedEnergyWh"]].values.tolist())
             clean = pd.DataFrame(points, columns=["chargingMinutes", "chargedEnergyWh"])
+            first = rows.iloc[0]
             for column in rows.columns.difference(clean.columns):
-                clean[column] = rows.iloc[0][column]
+                clean[column] = first[column]
             normalized.append(clean)
         if normalized:
             frame = pd.concat(normalized, ignore_index=True)
