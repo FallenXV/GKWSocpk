@@ -167,3 +167,6 @@ cython_debug/
 *.csv
 archive/
 snapshots/
+
+# blogs
+docs/blogs
