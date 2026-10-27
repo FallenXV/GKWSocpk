@@ -1,0 +1,5 @@
+# Store text with LF; checkouts follow each machine's core.autocrlf
+# (CRLF on Windows, LF on macOS), so mixed endings stop creeping in.
+* text=auto
+
+*.png binary
