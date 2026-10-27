@@ -56,11 +56,13 @@ function similarityMatrix(palette) {
 
 function normalise(items, extent) {
   if (!extent) {
-    const xs = items.flatMap((item) => item.points.map((point) => point[0])).filter(Number.isFinite);
-    const ys = items.flatMap((item) => item.points.map((point) => point[1])).filter(Number.isFinite);
-    extent = xs.length
-      ? { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }
-      : { x0: 0, x1: 1, y0: 0, y1: 1 };
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const item of items) for (const [x, y] of item.points) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+    extent = x0 === Infinity ? { x0: 0, x1: 1, y0: 0, y1: 1 } : { x0, x1, y0, y1 };
   }
   const spanX = (extent.x1 - extent.x0) || 1;
   const spanY = (extent.y1 - extent.y0) || 1;

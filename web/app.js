@@ -39,6 +39,7 @@ const ui = {
   overlayToggle: element('overlay-toggle'),
   referenceToggle: element('reference-toggle'),
   referenceNote: element('reference-note'),
+  legendToggle: element('legend-toggle'),
   overlayWrap: element('overlay-wrap'),
   measuredToggle: element('measured-toggle'),
   measuredWrap: element('measured-wrap'),
@@ -65,6 +66,7 @@ const state = {
   colorMaps: new Map(),
   showMeasured: true,
   showReference: true,
+  showLegend: true,
   showSocAverages: false,
   visible: [],
   lastRank: null,
@@ -159,15 +161,16 @@ const BETTER = {
 /* ---------- colours ---------- */
 
 function extentOf(items) {
-  const xs = [];
-  const ys = [];
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const item of items) {
     for (const point of item.points) {
-      if (Number.isFinite(point[0]) && Number.isFinite(point[1])) { xs.push(point[0]); ys.push(point[1]); }
+      const [x, y] = point;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
   }
-  if (!xs.length) return { x0: 0, x1: 1, y0: 0, y1: 1 };
-  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  return x0 === Infinity ? { x0: 0, x1: 1, y0: 0, y1: 1 } : { x0, x1, y0, y1 };
 }
 
 /** Where every profile of a list sits on one figure, selection ignored. */
@@ -270,10 +273,14 @@ function colorFor(id, list) {
   return colorMap(list || activeList()).get(id) || state.palette[0];
 }
 
+const numberFormats = new Map();
 function fixed(value, decimals) {
-  return Number(value).toLocaleString(undefined, {
-    minimumFractionDigits: decimals, maximumFractionDigits: decimals,
-  });
+  if (!numberFormats.has(decimals)) {
+    numberFormats.set(decimals, new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: decimals, maximumFractionDigits: decimals,
+    }));
+  }
+  return numberFormats.get(decimals).format(Number(value));
 }
 
 function shorten(text, length) {
@@ -769,12 +776,20 @@ function chargingScene(entry, profiles) {
       if (view !== 'Charging duration' && coordinates.length > 1) {
         polylines.push({pts: coordinates, color, width: 2.4, alpha: index ? 0.5 : 0.94});
       }
-      for (const [x, y] of coordinates) {
-        dots.push({x, y, r: view === 'Charging duration' ? 5 : 2.3, fill: color, alpha: 0.8});
-        points.push({x, y, color, details: [profile.label,
-          `${axes.xLabel}: ${fixed(x, 2)}`, `${axes.yLabel}: ${fixed(y, 2)}`,
-          `Rated charger: ${Number.isFinite(profile.chargerPowerW) ? fixed(profile.chargerPowerW, 0) + ' W' : 'unavailable'}`,
-          `Source: ${series.source}`].join('\n')});
+      // Share a lazy formatter per series, rather than allocating/formatting
+      // tens of thousands of tooltip strings before the first paint.
+      const charger = Number.isFinite(profile.chargerPowerW) ? fixed(profile.chargerPowerW, 0) + ' W' : 'unavailable';
+      const details = point => [profile.label,
+        `${axes.xLabel}: ${fixed(point.x, 2)}`, `${axes.yLabel}: ${fixed(point.y, 2)}`,
+        `Rated charger: ${charger}`, `Source: ${series.source}`].join('\n');
+      for (let i = 0; i < coordinates.length; i += 1) {
+        const [x, y] = coordinates[i];
+        // Dense curves retain every line vertex and hover sample. Only their
+        // endpoints need markers; drawing a circle for each sample is costly.
+        if (coordinates.length < 4 || i === 0 || i === coordinates.length - 1) {
+          dots.push({x, y, r: view === 'Charging duration' ? 5 : 2.3, fill: color, alpha: 0.8});
+        }
+        points.push({x, y, color, label: profile.label, details});
       }
     });
     if (shown) legend.push({text: profile.legend, color, shape: view === 'Charging duration' ? 'dot' : 'line'});
@@ -1202,6 +1217,7 @@ function refresh() {
   }
 
   addEfficiencyReference(scene, entry, chosen);
+  if (!state.showLegend) scene.main.legend = null;
   const better = !scene.main.message && BETTER[view];
   scene.main.better = better ? better[0] : null;
   ui.chartGuide.textContent = better ? `▲ Better toward the ${better[0]}: ${better[1]}` : '';
@@ -1468,6 +1484,7 @@ async function invokeDebugChart(spec = {}) {
   if (spec.processorSearch !== undefined) state.searches.socs[key] = String(spec.processorSearch);
   if (spec.showMeasured !== undefined) state.showMeasured = Boolean(spec.showMeasured);
   if (spec.showSocAverages !== undefined) state.showSocAverages = Boolean(spec.showSocAverages);
+  if (spec.showLegend !== undefined) state.showLegend = Boolean(spec.showLegend);
   if (spec.rankOffset !== undefined) state.rankOffsets[key] = spec.rankOffset;
 
   if (profiles !== null) {
@@ -1575,6 +1592,11 @@ ui.referenceToggle.addEventListener('change', () => {
   refresh();
 });
 
+ui.legendToggle.addEventListener('change', () => {
+  state.showLegend = ui.legendToggle.checked;
+  refresh();
+});
+
 ui.measuredToggle.addEventListener('change', () => {
   state.showMeasured = ui.measuredToggle.checked;
   refresh();
@@ -1621,13 +1643,22 @@ document.addEventListener('click', () => closeMenus());
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenus(); });
 
 const stage = element('chart-stage');
+let hoverRequest = null;
+let hoverPosition = null;
 stage.addEventListener('mousemove', (event) => {
-  const box = stage.getBoundingClientRect();
-  const x = event.clientX - box.left;
-  const y = event.clientY - box.top;
-  surface.drawHover(surface.nearest(hoverPoints, x, y, 24));
+  hoverPosition = {x: event.clientX, y: event.clientY};
+  if (hoverRequest !== null) return;
+  hoverRequest = requestAnimationFrame(() => {
+    hoverRequest = null;
+    const box = stage.getBoundingClientRect();
+    surface.drawHover(surface.nearest(hoverPoints, hoverPosition.x - box.left, hoverPosition.y - box.top, 24));
+  });
 });
-stage.addEventListener('mouseleave', () => surface.drawHover(null));
+stage.addEventListener('mouseleave', () => {
+  if (hoverRequest !== null) cancelAnimationFrame(hoverRequest);
+  hoverRequest = null;
+  surface.drawHover(null);
+});
 
 stage.addEventListener('wheel', (event) => {
   const box = stage.getBoundingClientRect();
@@ -1648,7 +1679,7 @@ stage.addEventListener('wheel', (event) => {
 stage.addEventListener('click', (event) => {
   const box = stage.getBoundingClientRect();
   const hit = surface.nearest(hoverPoints, event.clientX - box.left, event.clientY - box.top, 24);
-  if (hit) ui.chartNote.textContent = `Selected chart profile: ${hit.point.details.split('\n')[0]}`;
+  if (hit) ui.chartNote.textContent = `Selected chart profile: ${hit.point.label || hit.point.details.split('\n')[0]}`;
 });
 
 window.addEventListener('keydown', (event) => {

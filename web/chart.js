@@ -385,16 +385,17 @@ function drawMain(ctx, panel, main) {
     return null;
   }
 
-  const xs = [];
-  const ys = [];
-  for (const line of main.polylines) for (const point of line.pts) { xs.push(point[0]); ys.push(point[1]); }
-  for (const dot of main.dots) { xs.push(dot.x); ys.push(dot.y); }
-  for (const link of main.connectors || []) { xs.push(link.x1, link.x2); ys.push(link.y1, link.y2); }
-  for (const rule of main.hlines || []) ys.push(rule.y);
-  const xLo = Math.min(...xs);
-  const xHi = Math.max(...xs);
-  const yLo = Math.min(...ys);
-  const yHi = Math.max(...ys);
+  // Scan bounds without duplicating all coordinates or passing an unbounded
+  // number of arguments to Math.min/max (large scenes exceed browser limits).
+  let xLo = Infinity, xHi = -Infinity, yLo = Infinity, yHi = -Infinity;
+  const include = (x, y) => {
+    if (Number.isFinite(x)) { xLo = Math.min(xLo, x); xHi = Math.max(xHi, x); }
+    if (Number.isFinite(y)) { yLo = Math.min(yLo, y); yHi = Math.max(yHi, y); }
+  };
+  for (const line of main.polylines) for (const point of line.pts) include(point[0], point[1]);
+  for (const dot of main.dots) include(dot.x, dot.y);
+  for (const link of main.connectors || []) { include(link.x1, link.y1); include(link.x2, link.y2); }
+  for (const rule of main.hlines || []) include(null, rule.y);
 
   const bottom = 46;
   const top = panel.y + HEADER_H;
@@ -795,11 +796,14 @@ class Surface {
     this.frame = null;
     this.size = { width: 0, height: 0 };
     this.pending = false;
+    this.hoverIndex = null;
     new ResizeObserver(() => this.render()).observe(stage);
   }
 
   setScene(scene) {
     this.scene = scene;
+    this.frame = null;
+    this.hoverIndex = null;
     this.render();
   }
 
@@ -828,6 +832,7 @@ class Surface {
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.clearRect(0, 0, width, height);
     this.frame = drawScene(ctx, this.scene, width, height);
+    this.hoverIndex = null;
     this.clearOverlay();
   }
 
@@ -845,15 +850,33 @@ class Surface {
     const { xScale, yScale, plot } = this.frame.main;
     if (x < plot.x - 4 || x > plot.x + plot.width + 4 ||
         y < plot.y - 4 || y > plot.y + plot.height + 4) return null;
+    // Project once per frame/point set. Pointer moves then inspect nearby
+    // screen cells, preserving exact nearest-sample selection and tie order.
+    const cellSize = 32;
+    if (!this.hoverIndex || this.hoverIndex.points !== points || this.hoverIndex.frame !== this.frame) {
+      const cells = new Map();
+      points.forEach((point, order) => {
+        const px = xScale(point.x), py = yScale(point.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+        const key = `${Math.floor(px / cellSize)},${Math.floor(py / cellSize)}`;
+        if (!cells.has(key)) cells.set(key, []);
+        cells.get(key).push({point, px, py, order});
+      });
+      this.hoverIndex = {points, frame: this.frame, cells};
+    }
     let best = null;
     let bestDistance = radius * radius;
-    for (const point of points) {
-      const dx = xScale(point.x) - x;
-      const dy = yScale(point.y) - y;
-      const distance = dx * dx + dy * dy;
-      if (distance <= bestDistance) { bestDistance = distance; best = point; }
+    for (let col = Math.floor((x - radius) / cellSize); col <= Math.floor((x + radius) / cellSize); col += 1) {
+      for (let row = Math.floor((y - radius) / cellSize); row <= Math.floor((y + radius) / cellSize); row += 1) {
+        for (const entry of this.hoverIndex.cells.get(`${col},${row}`) || []) {
+          const distance = (entry.px - x) ** 2 + (entry.py - y) ** 2;
+          if (distance < bestDistance || (distance === bestDistance && (!best || entry.order > best.order))) {
+            bestDistance = distance; best = entry;
+          }
+        }
+      }
     }
-    return best ? { point: best, px: xScale(best.x), py: yScale(best.y) } : null;
+    return best ? {point: best.point, px: best.px, py: best.py} : null;
   }
 
   drawHover(hit) {
@@ -888,7 +911,8 @@ class Surface {
     ctx.lineWidth = 1.6;
     ctx.stroke();
 
-    const lines = point.details.split('\n');
+    const details = typeof point.details === 'function' ? point.details(point) : point.details;
+    const lines = details.split('\n');
     ctx.font = font(11, 400);
     const lineHeight = 16;
     const width = Math.max(...lines.map((line) => ctx.measureText(line).width)) + 22;
