@@ -206,13 +206,16 @@ function drawAxes(ctx, plot, xScale, yScale, xLabel, yLabel) {
       ctx.fillText(formatTick(tick, xScale.step), x, plot.y + plot.height + 7);
     }
   }
+  let tickWidth = 0;
   if (yScale) {
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     for (const tick of yScale.ticks) {
       const y = yScale(tick);
       if (y < plot.y - 1 || y > plot.y + plot.height + 1) continue;
-      ctx.fillText(formatTick(tick, yScale.step), plot.x - 7, y);
+      const text = formatTick(tick, yScale.step);
+      tickWidth = Math.max(tickWidth, ctx.measureText(text).width);
+      ctx.fillText(text, plot.x - 7, y);
     }
   }
   ctx.fillStyle = THEME.faint;
@@ -226,7 +229,9 @@ function drawAxes(ctx, plot, xScale, yScale, xLabel, yLabel) {
   if (yLabel) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    rotatedText(ctx, ellipsize(ctx, yLabel, plot.height), plot.x - 42,
+    // Hug the widest tick label: a fixed offset clipped the title beside narrow
+    // ticks (e.g. "3") and overlapped wide ones. measureGutter reserves the room.
+    rotatedText(ctx, ellipsize(ctx, yLabel, plot.height), plot.x - 13 - Math.ceil(tickWidth),
       plot.y + plot.height / 2, -90);
   }
 }
