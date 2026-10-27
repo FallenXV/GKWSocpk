@@ -29,6 +29,7 @@ import pandas as pd
 
 from cpu_benchmarks import CPU_BENCHMARKS
 from battery_charging import charging_profiles
+from socpk_client import utf8_console
 from socpk_data import (
     CURVE_DATASETS,
     DATASET_DEFINITIONS,
@@ -460,6 +461,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    utf8_console()
     args = build_parser().parse_args(argv)
     root = args.root.resolve()
     paths = [path.resolve() for path in args.csv_paths] if args.csv_paths else None
@@ -493,7 +495,8 @@ def main(argv: list[str] | None = None) -> None:
         thread.start()
     try:
         while True:
-            threads[0].join(timeout=3600)
+            # Keep the main thread responsive to Ctrl+C on Windows.
+            time.sleep(0.2)
     except KeyboardInterrupt:
         print("\nStopped")
     finally:

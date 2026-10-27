@@ -28,6 +28,7 @@ from socpk_client import (  # noqa: E402
     curve_frame,
     series_label,
     new_snapshot,
+    utf8_console,
 )
 
 __all__ = [
@@ -161,6 +162,7 @@ def scrape_gpu_curves(
 
 
 def main() -> None:
+    utf8_console()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--gpus', nargs='*', default=None,
                         help="Names to scrape; discovers all if omitted.")

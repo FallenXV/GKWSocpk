@@ -52,9 +52,10 @@ from socpk_client import (  # noqa: E402
     decode_embedded_payload,
     BATTERY_PAGE_SLUG,
     battery_capacity_fallback,
+    battery_records_from_page,
     fetch_chart_page,
-    battery_rows_from_page,
     new_snapshot,
+    utf8_console,
 )
 from battery_metadata import review_record
 from battery_soc import (  # noqa: E402
@@ -191,8 +192,12 @@ def parse_battery_rows(source_text: str) -> List[List]:
     return rows
 
 
-def fetch_battery_rows(urls: List[str]) -> List[List]:
-    """Fetch battery rows from the current API or legacy HTML/JS sources."""
+def fetch_battery_data(urls: List[str]) -> Tuple[List[List], Optional[List[Dict]]]:
+    """Fetch battery rows and optional full API source metadata.
+
+    The second return value is populated for the current chart API. Legacy
+    ``arr=[...]`` sources retain the historical row-only behavior.
+    """
     errors = []
     for url in urls:
         try:
@@ -202,7 +207,9 @@ def fetch_battery_rows(urls: List[str]) -> List[List]:
                         "", "/batlife", f"/{BATTERY_PAGE_SLUG}",
                         f"/api/pages/{BATTERY_PAGE_SLUG}",
                     }):
-                return battery_rows_from_page(fetch_chart_page(BATTERY_PAGE_SLUG, url))
+                page = fetch_chart_page(BATTERY_PAGE_SLUG, url)
+                source_records = battery_records_from_page(page)
+                return [record["row"] for record in source_records], source_records
             text = fetch_text(url)
             candidates = [text]
             if url.endswith("/") or "<html" in text.lower():
@@ -213,7 +220,7 @@ def fetch_battery_rows(urls: List[str]) -> List[List]:
                         errors.append(f"{script_url}: {exc}")
             for candidate in candidates:
                 try:
-                    return parse_battery_rows(candidate)
+                    return parse_battery_rows(candidate), None
                 except ValueError:
                     continue
             errors.append(f"{url}: no recognized battery dataset")
@@ -221,6 +228,11 @@ def fetch_battery_rows(urls: List[str]) -> List[List]:
             errors.append(f"{url}: {exc}")
     detail = "; ".join(errors)
     raise ValueError(f"Could not fetch SoCPK battery data. {detail}")
+
+
+def fetch_battery_rows(urls: List[str]) -> List[List]:
+    """Fetch battery rows from the current API or legacy HTML/JS sources."""
+    return fetch_battery_data(urls)[0]
 
 # -----------------------------
 # Robust arr=[ ... ] extraction
@@ -362,9 +374,11 @@ def parse_rows_from_js(array_literal: str) -> List[List]:
 # -----------------------------
 # Records & metrics
 # -----------------------------
-def rows_to_records(arr, brand_lang: str) -> List[Dict]:
+def rows_to_records(
+    arr, brand_lang: str, source_records: Optional[List[Dict]] = None,
+) -> List[Dict]:
     out = []
-    for row in arr:
+    for index, row in enumerate(arr):
         if not (isinstance(row, (list, tuple)) and len(row) >= 6):
             continue
         brand_src = str(row[0]).strip()
@@ -383,7 +397,7 @@ def rows_to_records(arr, brand_lang: str) -> List[Dict]:
         minPerWh  = minutes / capacityWh            # higher is better
 
         fallback = battery_capacity_fallback(brand_src, model)
-        out.append({
+        record = {
             "brand": brand, "model": model, "os": osver,
             "minutes": minutes, "hours": minutes/60.0,
             "capacityWh": capacityWh,
@@ -396,7 +410,16 @@ def rows_to_records(arr, brand_lang: str) -> List[Dict]:
             "delta_vs_best_power_pct": None,
             "delta_vs_best_min_per_wh_pct": None,
             "delta_vs_best_minutes_pct": None,
-        })
+        }
+        if source_records and index < len(source_records):
+            record.update({
+                key: source_records[index].get(key)
+                for key in (
+                    "source_id", "source_name", "source_name_en", "source_group",
+                    "source_color", "source_meta_json", "source_series_json",
+                )
+            })
+        out.append(record)
     return out
 
 def compute_deltas(records: List[Dict]) -> None:
@@ -776,6 +799,7 @@ def print_correlations(records: List[Dict]) -> None:
 # Main
 # -----------------------------
 def main():
+    utf8_console()
     ap = argparse.ArgumentParser(description="SoCPK Battery Efficiency + GSMArena enrichment")
     ap.add_argument("--site", choices=sorted(SITE_URLS.keys()), default=DEFAULT_SITE_KEY,
                     help="Which SoCPK battery dataset to target (default: 5.0)")
@@ -805,12 +829,12 @@ def main():
     default_urls = SITE_URLS.get(args.site, SITE_URLS[DEFAULT_SITE_KEY])
     urls = args.url if args.url else default_urls
     try:
-        raw_rows = fetch_battery_rows(urls)
+        raw_rows, source_records = fetch_battery_data(urls)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
     # 2) Build records + metrics
-    records = rows_to_records(raw_rows, brand_lang=args.brand_lang)
+    records = rows_to_records(raw_rows, brand_lang=args.brand_lang, source_records=source_records)
     if not records:
         raise SystemExit("No valid rows parsed.")
 
@@ -902,6 +926,8 @@ def main():
         "refresh_hz", "chipset", "soc", "cpu", "gpu", "battery_mAh", "spec_url",
         "soc_device_count", "soc_avg_capacity_wh", "soc_avg_power_w",
         "soc_avg_min_per_wh", "soc_avg_runtime_hours",
+        "source_id", "source_name", "source_name_en", "source_group",
+        "source_color", "source_meta_json", "source_series_json",
     ]
     fieldnames = [
         "brand","model","os","minutes","hours","capacityWh",

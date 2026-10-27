@@ -25,8 +25,10 @@ from socpk_client import (  # noqa: E402
     extract_curve_coordinates,
     fetch_chart_page,
     select_curve_series,
+    series_metadata,
     series_label,
     new_snapshot,
+    utf8_console,
 )
 
 from cpu_benchmarks import CPU_BENCHMARKS, CORE_COLUMNS  # noqa: E402
@@ -146,6 +148,11 @@ def _cpu_frame(series, benchmark: str) -> pd.DataFrame:
     columns = ["CPU", "Board_Power_W", definition.score_column, "Efficiency", "Benchmark"]
     if definition.single_core:
         columns += list(CORE_COLUMNS)
+    columns += [
+        "Series_ID", "Source_Name", "Source_Name_EN", "Source_Group",
+        "Source_Color", "Source_Default_Visible", "Source_Fitted",
+        "Source_Meta_JSON",
+    ]
     rows = []
     for item in series:
         meta = item.get("meta", {})
@@ -153,6 +160,7 @@ def _cpu_frame(series, benchmark: str) -> pd.DataFrame:
         if definition.single_core:
             identity.update(Core=meta["coreName"], Core_Group=meta["coreGroup"],
                             Core_Variant=meta.get("coreVariant", ""))
+        identity.update(series_metadata(item))
         for power, score in item["points"]:
             rows.append({**identity, "Board_Power_W": power, definition.score_column: score,
                          "Efficiency": score / power})
@@ -222,6 +230,7 @@ def scrape_cpu_benchmarks(cpu_names=None) -> dict[str, pd.DataFrame]:
 
 
 def main() -> None:
+    utf8_console()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--cpus', nargs='*', default=None,
                         help="Chip names; SPEC includes every published core of each chip.")

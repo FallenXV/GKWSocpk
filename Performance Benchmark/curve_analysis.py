@@ -32,6 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 from cpu_benchmarks import CPU_BENCHMARKS, CORE_COLUMNS, cpu_profile_label
+from socpk_client import utf8_console
 
 
 # ----------------------------
@@ -254,6 +255,7 @@ def plot_efficiency_vs_power(df: pd.DataFrame, colors: Dict[str, tuple], save: b
 # ----------------------------
 
 def main() -> None:
+    utf8_console()
     parser = argparse.ArgumentParser(description='Analyse curve CSV and plot efficiency statistics')
     parser.add_argument('--input', type=str, required=True,
                         help='Path to the CSV file produced by cpu_curve_parser or gpu_curve_parser')

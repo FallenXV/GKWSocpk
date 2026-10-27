@@ -6,6 +6,7 @@ import base64
 import json
 import math
 import re
+import sys
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -223,6 +224,29 @@ def series_label(item: dict[str, Any]) -> str:
     return item.get("name_en") or item["name"]
 
 
+def series_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    """Return the source metadata that should accompany every curve point.
+
+    The chart API has added fields over time (for example ``fitted`` and
+    ``coreVariant``).  Keep the commonly useful values in ordinary columns,
+    while also serializing the complete ``meta`` object so a new field is not
+    silently lost by the CSV export.
+    """
+    meta = item.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
+    return {
+        "Series_ID": item.get("id"),
+        "Source_Name": item.get("name", ""),
+        "Source_Name_EN": item.get("name_en", ""),
+        "Source_Group": item.get("group", ""),
+        "Source_Color": item.get("color", ""),
+        "Source_Default_Visible": meta.get("defaultVisible"),
+        "Source_Fitted": meta.get("fitted"),
+        "Source_Meta_JSON": json.dumps(meta, ensure_ascii=False, sort_keys=True),
+    }
+
+
 def curve_frame(series, id_column: str | None, score_column: str):
     """Convert decoded coordinates into the existing CSV schema.
 
@@ -230,18 +254,27 @@ def curve_frame(series, id_column: str | None, score_column: str):
     """
     import pandas as pd
 
-    labels, powers, scores = [], [], []
+    rows = []
     for item in series:
         label = series_label(item)
+        metadata = series_metadata(item)
         for power, score in item["points"]:
-            labels.append(label)
-            powers.append(power)
-            scores.append(score)
-    columns = {"Board_Power_W": powers, score_column: scores,
-               "Efficiency": [score / power for power, score in zip(powers, scores)]}
-    if id_column:
-        columns = {id_column: labels, **columns}
-    return pd.DataFrame(columns)
+            row = {
+                "Board_Power_W": power,
+                score_column: score,
+                "Efficiency": score / power,
+                **metadata,
+            }
+            if id_column:
+                row = {id_column: label, **row}
+            rows.append(row)
+    columns = ([id_column] if id_column else []) + [
+        "Board_Power_W", score_column, "Efficiency",
+        "Series_ID", "Source_Name", "Source_Name_EN", "Source_Group",
+        "Source_Color", "Source_Default_Visible", "Source_Fitted",
+        "Source_Meta_JSON",
+    ]
+    return pd.DataFrame(rows, columns=columns)
 
 
 def battery_capacity_fallback(brand: str, model: str) -> dict[str, float | int]:
@@ -252,15 +285,22 @@ def battery_capacity_fallback(brand: str, model: str) -> dict[str, float | int]:
     )
 
 
-def battery_rows_from_page(page: dict[str, Any]) -> list[list]:
-    """Adapt API battery metadata and runtime to the legacy seven-column rows."""
+def battery_records_from_page(page: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse all usable battery series while retaining the complete source row.
+
+    ``row`` preserves the historical seven-column adapter used by callers;
+    the other fields let the battery CSV/JSON export keep API identity and
+    metadata that the old adapter discarded.
+    """
     if page.get("type") != "bar-chart" or page.get("config", {}).get("unit") != "min":
         raise ValueError("Expected a SoCPK battery runtime chart in minutes.")
-    rows = []
+    records = []
     for series in page["series"]:
         meta = series.get("meta", {})
+        if not isinstance(meta, dict):
+            meta = {}
         brand = series.get("group", "")
-        model = series["name"]
+        model = series.get("name", "")
         if brand and model.casefold().startswith(brand.casefold() + " "):
             model = model[len(brand):].strip()
         minutes = series.get("points")
@@ -269,15 +309,41 @@ def battery_rows_from_page(page: dict[str, Any]) -> list[list]:
         capacity = meta.get("ratedEnergyWh")
         if not isinstance(capacity, (int, float)) or not math.isfinite(capacity) or capacity <= 0:
             capacity = battery_capacity_fallback(brand, model).get("ratedEnergyWh")
-        if not all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0
-                   for v in (minutes, capacity)):
+        if not all(isinstance(value, (int, float)) and math.isfinite(value) and value > 0
+                   for value in (minutes, capacity)):
             continue
-        # Remove codec quantization noise from runtime in minutes.
-        rows.append([brand, model, round(minutes, 3), meta.get("systemVersion", ""), "",
-                     capacity, meta.get("videoUrl", "")])
-    if not rows:
+        source_series = dict(series)
+        source_series["points"] = minutes
+        records.append({
+            "row": [brand, model, round(minutes, 3), meta.get("systemVersion", ""), "",
+                    capacity, meta.get("videoUrl", "")],
+            "source_id": series.get("id"),
+            "source_name": series.get("name", ""),
+            "source_name_en": series.get("name_en", ""),
+            "source_group": brand,
+            "source_color": series.get("color", ""),
+            "source_meta_json": json.dumps(meta, ensure_ascii=False, sort_keys=True),
+            "source_series_json": json.dumps(source_series, ensure_ascii=False, sort_keys=True),
+        })
+    if not records:
         raise ValueError("SoCPK API contains no usable battery results.")
-    return rows
+    return records
+
+
+def battery_rows_from_page(page: dict[str, Any]) -> list[list]:
+    """Adapt API battery metadata and runtime to the legacy seven-column rows."""
+    return [record["row"] for record in battery_records_from_page(page)]
+
+
+def utf8_console() -> None:
+    """Print device names and symbols even when Windows redirects output.
+
+    A redirected or piped stream falls back to the legacy code page (for
+    example cp1252), which cannot encode Chinese names or arrows.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and stream.encoding.lower() not in ("utf-8", "utf8"):
+            stream.reconfigure(encoding="utf-8")
 
 
 @contextmanager

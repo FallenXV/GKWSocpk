@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from battery_charging import CHARGING_COLUMNS, CHARGING_PAGE_SLUG, charging_rows_from_page
-from socpk_client import fetch_chart_page, new_snapshot
+from socpk_client import fetch_chart_page, new_snapshot, utf8_console
 
 
 def scrape_charging_curves(names=None):
@@ -26,6 +26,7 @@ def scrape_charging_curves(names=None):
 
 
 def main():
+    utf8_console()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--devices", nargs="+", help="Published device names or series IDs; defaults to all.")
     parser.add_argument("--output", default="snapshots/charging_curves.csv",

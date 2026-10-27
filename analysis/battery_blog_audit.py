@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from Battery.battery_parser import cache_path_for, parse_gsmarena_specs
+from socpk_client import utf8_console
 
 SOURCE = ROOT / "snapshots/battery_results_20260919T075628417409Z_1.csv"
 BRANDS = {"苹果": "Apple", "三星": "Samsung", "谷歌": "Google", "华为": "Huawei",
@@ -27,7 +28,7 @@ BRANDS = {"苹果": "Apple", "三星": "Samsung", "谷歌": "Google", "华为": 
 
 # The collector, dashboard and audit share the same reviewed metadata ledger.
 FIXES = {(r['brand'], r['model']): (r['fields'], r['reason'], r['source'])
-         for r in json.loads((ROOT / 'battery_metadata.json').read_text())}
+         for r in json.loads((ROOT / 'battery_metadata.json').read_text(encoding='utf-8'))}
 
 
 def cache_file(brand, model):
@@ -46,6 +47,7 @@ def reduction(value, reference):
 
 
 def main():
+    utf8_console()
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', type=Path, default=ROOT / 'analysis')
@@ -70,7 +72,7 @@ def main():
     records = []
     for index, row in raw.iterrows():
         path = cache_file(row.brand, row.model)
-        html = path.read_text()
+        html = path.read_text(encoding="utf-8")
         soup = BeautifulSoup(html, "html.parser")
         title = soup.select_one('[data-spec="modelname"]').get_text(" ", strip=True)
         specs = parse_gsmarena_specs(html)
@@ -154,7 +156,7 @@ def main():
         "reviewed_devices": json.loads(frame[["brand", "model", "soc", "minutes", "capacityWh", "avgPowerW", "screen_size_in", "resolution_px_w", "resolution_px_h", "refresh_hz"]].to_json(orient="records")),
     }
     target = args.output_dir / "battery_blog_audit.json"
-    target.write_text(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+    target.write_text(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8", newline="\n")
     lines = ["# Battery blog audit", "", summary["scope"], "", f"Source: `{summary['source']}`. SHA-256: `{summary['source_sha256']}`.",
         "", "Battery-imprint Wh is the capacity source of truth, as confirmed by the author. All original capacities, runtimes and device power estimates are preserved. No mAh overlay is applied.",
         "", f"80 devices; {len(assigned)} assigned to {len(groups)} processor groups; two unresolved variants retained in device comparisons. {summary['records_with_changes']} records have metadata changes.",
@@ -170,7 +172,7 @@ def main():
         if not source.startswith("https:"):
             source = "../" + source
         lines.append(f"| {row['csv_line']} | {row['brand']} {row['model']} | {row['cached_title']} | [{row['note']}]({source}){' — ' + changes if changes else ''} |")
-    (args.output_dir / "battery_blog_audit.md").write_text("\n".join(lines) + "\n")
+    (args.output_dir / "battery_blog_audit.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(json.dumps({k: v for k, v in summary.items() if k not in ["raw_device_audit", "reviewed_devices", "leave_one_brand_out"]}, ensure_ascii=False, indent=2))
     print("LARGEST BRAND OMISSIONS", json.dumps({k:v[0] for k,v in leave_out.items()}, ensure_ascii=False))
 

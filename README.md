@@ -49,6 +49,13 @@ Snapshots are written to `snapshots/`:
 Existing files are never overwritten. If a name is already taken, the new
 snapshot gets a timestamp suffix, and the dashboard loads the newest one.
 
+Curve snapshots retain each source series ID, local and English names, group,
+color, visibility and fitted flags, plus its full metadata in
+`Source_Meta_JSON`. Battery snapshots retain the source series ID, names,
+group, color, and full metadata and series JSON in `source_meta_json` and
+`source_series_json`. Legacy `arr=[...]` battery sources leave these source
+metadata fields empty.
+
 Useful options:
 
 - **CPU:** `--benchmark GB6|GB7|SPEC2026_INT|SPEC2026_FP|all`, `--cpus "A19 Pro"`,
