@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -349,12 +350,13 @@ def classify_frame(frame: pd.DataFrame, path: Path) -> str | None:
 
 def discover_csv_files(root: Path) -> list[Path]:
     """Find project CSVs, keeping only the newest file in a snapshot family."""
-    # Evidence and fixture CSVs are implementation inputs, not dashboard data.
-    # The project-root launch scans recursively, so keep them from being merged
-    # with the newest production snapshot family.
+    # Evidence and fixture CSVs are implementation inputs, not dashboard data,
+    # and archive/ holds retired exports under older file names. The
+    # project-root launch scans recursively, so keep them from being merged
+    # with the newest production snapshot family. --csv still loads any file.
     ignored = {
         ".git", ".venv", "venv", "__pycache__", ".idea", ".pytest_cache",
-        "artifacts", "tests",
+        "archive", "artifacts", "tests",
     }
     files: list[Path] = []
     for path in root.rglob("*.csv"):
@@ -364,14 +366,24 @@ def discover_csv_files(root: Path) -> list[Path]:
 
     # new_snapshot() appends this suffix rather than overwriting prior data.
     # Group those siblings so automatic discovery loads the newest snapshot,
-    # instead of merging an older canonical file first.
-    suffix = re.compile(r"_\d{8}T\d{12}Z_\d+$")
+    # instead of merging an older canonical file first. The stamp in the name
+    # orders a family: copying or restoring a file changes its mtime, not its stamp.
+    suffix = re.compile(r"_(\d{8}T\d{12}Z)_(\d+)$")
+
+    def written(path: Path) -> tuple[str, int]:
+        match = suffix.search(path.stem)
+        if match:
+            return match[1], int(match[2])
+        # The unsuffixed file has no stamp; its mtime is the best record left.
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+        return mtime.strftime("%Y%m%dT%H%M%S%fZ"), 0
+
     newest: dict[Path, Path] = {}
     for path in files:
         family_stem = suffix.sub("", path.stem)
         family = path.with_name(family_stem + path.suffix)
         incumbent = newest.get(family)
-        if incumbent is None or path.stat().st_mtime_ns > incumbent.stat().st_mtime_ns:
+        if incumbent is None or written(path) > written(incumbent):
             newest[family] = path
     return sorted(newest.values(), key=lambda item: str(item).casefold())
 
