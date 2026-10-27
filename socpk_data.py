@@ -521,25 +521,25 @@ def collection_summary(collections: dict[str, pd.DataFrame]) -> dict[str, tuple[
 DATASET_SOURCE_HINTS = {
     "Charging": (
         "snapshots/charging_curves.csv",
-        "python Battery/charging_parser.py",
+        "python battery/charging_parser.py",
     ),
     **{
         benchmark.dataset_key: (
             "snapshots/" + benchmark.filename,
-            f'python "Performance Benchmark/cpu_curve_parser.py" --benchmark {name}',
+            f'python performance_benchmark/cpu_curve_parser.py --benchmark {name}',
         )
         for name, benchmark in CPU_BENCHMARKS.items()
     },
     "GPU": (
         "snapshots/gpu_snl_curves.csv",
-        'python "Performance Benchmark/gpu_curve_parser.py"',
+        'python performance_benchmark/gpu_curve_parser.py',
     ),
     "Laptop GPU": (
         "snapshots/laptop_gpu_curves.csv",
-        'python "Performance Benchmark/laptop_gpu_curve_parser.py"',
+        'python performance_benchmark/laptop_gpu_curve_parser.py',
     ),
     "Battery": (
         "snapshots/battery_results.csv",
-        "python Battery/battery_parser.py",
+        "python battery/battery_parser.py",
     ),
 }

@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from Battery.battery_parser import cache_path_for, parse_gsmarena_specs
+from battery.battery_parser import cache_path_for, parse_gsmarena_specs
 from socpk_client import utf8_console
 
 SOURCE = ROOT / "snapshots/battery_results_20260919T075628417409Z_1.csv"

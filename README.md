@@ -26,11 +26,11 @@ reproduction.
 ## 1. Collect data
 
 ```powershell
-python Battery\battery_parser.py --auto-soc
-python Battery\charging_parser.py
-python "Performance Benchmark\cpu_curve_parser.py" --benchmark all
-python "Performance Benchmark\gpu_curve_parser.py"
-python "Performance Benchmark\laptop_gpu_curve_parser.py"
+python battery\battery_parser.py --auto-soc
+python battery\charging_parser.py
+python performance_benchmark\cpu_curve_parser.py --benchmark all
+python performance_benchmark\gpu_curve_parser.py
+python performance_benchmark\laptop_gpu_curve_parser.py
 ```
 
 Snapshots are written to `snapshots/`:
@@ -177,7 +177,7 @@ each selected processor.
 
 ## Charging charts
 
-Collect with `python Battery/charging_parser.py`, then choose **Reload data**
+Collect with `python battery/charging_parser.py`, then choose **Reload data**
 and **CHARGING** in either dashboard. The collector reads SoCPK's
 [charging chart](https://www.socpk.com/charge-curves) and creates a separate
 snapshot without changing battery-endurance files.
@@ -237,7 +237,7 @@ python socpk_web.py --browser chrome
 
 ## Other scripts
 
-- `Performance Benchmark\curve_analysis.py --input <csv> --save` plots per-chip
+- `performance_benchmark\curve_analysis.py --input <csv> --save` plots per-chip
   power, score and efficiency statistics and writes `curve_summary.csv`.
 - `analysis/battery_blog_audit.py` reproduces the numbers in the battery
   write-up offline.

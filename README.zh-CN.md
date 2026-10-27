@@ -24,10 +24,10 @@ python -m pip install -r requirements.txt
 ## 1. 采集数据
 
 ```powershell
-python Battery\battery_parser.py --auto-soc
-python "Performance Benchmark\cpu_curve_parser.py" --benchmark all
-python "Performance Benchmark\gpu_curve_parser.py"
-python "Performance Benchmark\laptop_gpu_curve_parser.py"
+python battery\battery_parser.py --auto-soc
+python performance_benchmark\cpu_curve_parser.py --benchmark all
+python performance_benchmark\gpu_curve_parser.py
+python performance_benchmark\laptop_gpu_curve_parser.py
 ```
 
 快照写入 `snapshots/` 目录：
@@ -189,7 +189,7 @@ python socpk_web.py --browser chrome
 
 ## 其他脚本
 
-- `Performance Benchmark\curve_analysis.py --input <csv> --save` 绘制每颗芯片的
+- `performance_benchmark\curve_analysis.py --input <csv> --save` 绘制每颗芯片的
   功耗、分数和能效统计图，并写入 `curve_summary.csv`。
 - `analysis/battery_blog_audit.py` 可离线复现电池分析文章中的数据。
 
